@@ -1,0 +1,16 @@
+[Unit]
+Description=DingTalk Stats Reporter
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/dingtalk_msg
+Environment="PATH=/opt/dingtalk_msg/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+ExecStart=/opt/dingtalk_msg/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8765
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

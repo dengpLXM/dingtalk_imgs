@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DingTalk Stats Reporter</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/dracula.min.css">
+<style>
+  body { background: #f5f6fa; }
+  .navbar-brand { font-weight: 700; letter-spacing: 1px; }
+  .CodeMirror { height: 320px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 13px; }
+  .badge-enabled { background: #198754; }
+  .badge-disabled { background: #6c757d; }
+  .result-box { background: #1e1e2e; color: #cdd6f4; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; }
+  .tab-content { background: #fff; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 20px; }
+  .nav-tabs .nav-link.active { font-weight: 600; }
+  .table th { background: #f8f9fa; }
+  .action-btns .btn { padding: 2px 8px; font-size: 12px; }
+  #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark mb-4">
+  <div class="container-fluid">
+    <span class="navbar-brand">DingTalk Stats Reporter</span>
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn btn-sm btn-outline-secondary" onclick="openGithubModal()">⚙ 图片图床配置</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid px-4">
+  <ul class="nav nav-tabs" id="mainTab">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-mongo">MongoDB 配置</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-scripts">查询脚本</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-bots">钉钉机器人</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-tasks">任务映射</a></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- MongoDB 配置 -->
+    <div class="tab-pane fade show active" id="tab-mongo">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">MongoDB 连接配置</h5>
+        <button class="btn btn-primary btn-sm" onclick="openMongoModal()">+ 新增配置</button>
+      </div>
+      <table class="table table-bordered table-hover">
+        <thead><tr><th>名称</th><th>主机</th><th>端口</th><th>数据库</th><th>操作</th></tr></thead>
+        <tbody id="mongo-list"></tbody>
+      </table>
+    </div>
+
+    <!-- 查询脚本 -->
+    <div class="tab-pane fade" id="tab-scripts">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">查询脚本</h5>
+        <button class="btn btn-primary btn-sm" onclick="openScriptModal()">+ 新增脚本</button>
+      </div>
+      <table class="table table-bordered table-hover">
+        <thead><tr><th>名称</th><th>描述</th><th>MongoDB配置</th><th>操作</th></tr></thead>
+        <tbody id="script-list"></tbody>
+      </table>
+    </div>
+
+    <!-- 钉钉机器人 -->
+    <div class="tab-pane fade" id="tab-bots">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">钉钉机器人配置</h5>
+        <button class="btn btn-primary btn-sm" onclick="openBotModal()">+ 新增机器人</button>
+      </div>
+      <table class="table table-bordered table-hover">
+        <thead><tr><th>名称</th><th>描述</th><th>Webhook</th><th>操作</th></tr></thead>
+        <tbody id="bot-list"></tbody>
+      </table>
+    </div>
+
+    <!-- 任务映射 -->
+    <div class="tab-pane fade" id="tab-tasks">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">任务映射</h5>
+        <button class="btn btn-primary btn-sm" onclick="openTaskModal()">+ 新增任务</button>
+      </div>
+      <table class="table table-bordered table-hover">
+        <thead><tr><th>名称</th><th>脚本</th><th>机器人</th><th>消息类型</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead>
+        <tbody id="task-list"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- MongoDB 配置 Modal -->
+<div class="modal fade" id="mongoModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">MongoDB 配置</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="mongo-id">
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label">配置名称 *</label><input type="text" class="form-control" id="mongo-name" placeholder="如: 生产环境"></div>
+          <div class="col-md-6"><label class="form-label">数据库名 *</label><input type="text" class="form-control" id="mongo-database" placeholder="mydb"></div>
+          <div class="col-md-8"><label class="form-label">主机</label><input type="text" class="form-control" id="mongo-host" value="localhost"></div>
+          <div class="col-md-4"><label class="form-label">端口</label><input type="number" class="form-control" id="mongo-port" value="27017"></div>
+          <div class="col-md-6"><label class="form-label">用户名</label><input type="text" class="form-control" id="mongo-username"></div>
+          <div class="col-md-6"><label class="form-label">密码</label><input type="password" class="form-control" id="mongo-password"></div>
+          <div class="col-md-6"><label class="form-label">认证数据库</label><input type="text" class="form-control" id="mongo-auth-source" placeholder="admin"></div>
+          <div class="col-12">
+            <label class="form-label">完整 URI（优先使用，留空则用上面字段拼接）</label>
+            <input type="text" class="form-control" id="mongo-uri" placeholder="mongodb://user:pass@host:port/db?authSource=admin">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" onclick="testMongo()">测试连接</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="saveMongo()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 脚本 Modal -->
+<div class="modal fade" id="scriptModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">查询脚本</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="script-id">
+        <div class="row g-3 mb-3">
+          <div class="col-md-4"><label class="form-label">脚本名称 *</label><input type="text" class="form-control" id="script-name"></div>
+          <div class="col-md-4"><label class="form-label">MongoDB 配置 *</label><select class="form-select" id="script-mongo-id"></select></div>
+          <div class="col-md-4"><label class="form-label">描述</label><input type="text" class="form-control" id="script-description"></div>
+        </div>
+        <label class="form-label">Python 脚本（通过 <code>db</code> 变量访问 MongoDB，将结果赋给 <code>result</code>）</label>
+        <textarea id="script-editor"></textarea>
+        <div class="mt-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0">执行结果预览</label>
+            <button class="btn btn-sm btn-outline-success" onclick="testScript()">运行预览</button>
+          </div>
+          <div class="result-box" id="script-result">（点击"运行预览"执行脚本）</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="saveScript()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 机器人 Modal -->
+<div class="modal fade" id="botModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">钉钉机器人配置</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="bot-id">
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label">机器人名称 *</label><input type="text" class="form-control" id="bot-name"></div>
+          <div class="col-md-6"><label class="form-label">描述</label><input type="text" class="form-control" id="bot-description"></div>
+          <div class="col-12"><label class="form-label">Webhook URL *</label><input type="text" class="form-control" id="bot-webhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."></div>
+          <div class="col-12"><label class="form-label">加签密钥（可选）</label><input type="text" class="form-control" id="bot-secret" placeholder="SECxxx..."></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" onclick="testBot()">发送测试消息</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="saveBot()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 任务 Modal -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">任务映射</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="task-id">
+        <div class="row g-3 mb-3">
+          <div class="col-md-4"><label class="form-label">任务名称 *</label><input type="text" class="form-control" id="task-name"></div>
+          <div class="col-md-4"><label class="form-label">查询脚本 *</label><select class="form-select" id="task-script-id"></select></div>
+          <div class="col-md-4"><label class="form-label">钉钉机器人 *</label><select class="form-select" id="task-bot-id"></select></div>
+          <div class="col-md-4">
+            <label class="form-label">消息类型</label>
+            <select class="form-select" id="task-msg-type">
+              <option value="image">图片播报 (销售战报)</option>
+              <option value="markdown">Markdown</option>
+              <option value="text">纯文本</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">状态</label>
+            <select class="form-select" id="task-enabled">
+              <option value="true">启用</option>
+              <option value="false">停用</option>
+            </select>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label mb-0">消息模板（Jinja2 语法，可用变量：<code>{{ result }}</code> 原始数据，<code>{{ result_json }}</code> JSON字符串，dict结果可直接用字段名）</label>
+          <button class="btn btn-sm btn-outline-warning" onclick="suggestTemplate()" title="运行脚本并生成推荐模板">智能推荐模板</button>
+        </div>
+        <div id="template-hint" class="mb-1" style="font-size:12px;display:none"></div>
+        <textarea id="task-template-editor"></textarea>
+        <div class="alert alert-light mt-3 p-2" style="font-size:12px;">
+          <strong>图片播报模板说明：</strong>使用 HTML+CSS+Jinja2 语法，自由排版。<br>
+          内置样式类：<code>.report-container</code> 报表容器 &nbsp;|&nbsp;
+          <code>.report-title</code> 白色大标题 &nbsp;|&nbsp;
+          <code>table/th/td</code> 蓝色主题表格 &nbsp;|&nbsp;
+          <code>.region-cell</code> 区域合并单元格（金色文字）&nbsp;|&nbsp;
+          <code>.highlight</code> 金色高亮文字 &nbsp;|&nbsp;
+          <code>.frame</code> 金色边框容器 &nbsp;|&nbsp;
+          <code>.metrics</code> / <code>.metric-card</code> 指标卡片 &nbsp;|&nbsp;
+          <code>.metric-value</code> 金色数值 &nbsp;|&nbsp;
+          <code>.metric-label</code> 灰色标签 &nbsp;|&nbsp;
+          <code>.bottom-strip</code> 底部口号条 &nbsp;|&nbsp;
+          <code>{{REPORT_DATE}}</code> 自动替换为当前日期时间 &nbsp;|&nbsp;
+          <code>groupby('字段')</code> 按字段分组并合并行
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="saveTask()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 任务执行结果 / 预览 Modal -->
+<div class="modal fade" id="runModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="run-modal-title">执行结果</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="run-status" class="alert mb-3"></div>
+        <div id="run-image-section" style="display:none" class="mb-3 text-center">
+          <label class="form-label d-block text-start">图片预览效果</label>
+          <img id="run-image" src="" style="max-width:100%;border-radius:8px;border:1px solid #dee2e6;">
+        </div>
+        <div id="run-rendered-section" style="display:none" class="mb-3">
+          <label class="form-label">渲染后的模板文本</label>
+          <div class="result-box" id="run-rendered"></div>
+        </div>
+        <label class="form-label">脚本查询结果 <small class="text-muted">（可用于模板变量参考）</small></label>
+        <div class="result-box" id="run-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GitHub 图床配置 Modal -->
+<div class="modal fade" id="githubModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">图片图床配置（GitHub）</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="alert alert-info p-2" style="font-size:12px">
+          图片播报会将生成的战报图片上传到 GitHub 仓库，通过 JSDelivr CDN 分发（国内访问快）。<br>
+          需要：① <a href="https://github.com/new" target="_blank">创建一个 Public 仓库</a>（如 <code>my-reports</code>）
+          ② <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank">生成 Personal Access Token</a>（勾选 <code>repo</code> 权限）
+        </div>
+        <div class="mb-3">
+          <label class="form-label">GitHub Token *</label>
+          <input type="password" class="form-control" id="gh-token" placeholder="ghp_xxxxxxxxxxxx">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">仓库名 * <small class="text-muted">（格式：用户名/仓库名）</small></label>
+          <input type="text" class="form-control" id="gh-repo" placeholder="yourname/dingtalk-reports">
+        </div>
+        <div id="gh-status" class="mt-2" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" onclick="testGithub()">测试连接</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary" onclick="saveGithub()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/htmlmixed/htmlmixed.min.js"></script>
+
+<script>
+const API = '';
+let scriptEditor, templateEditor;
+let mongoConfigs = [], scripts = [], bots = [];
+
+// ── CodeMirror init ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  scriptEditor = CodeMirror.fromTextArea(document.getElementById('script-editor'), {
+    mode: 'python', theme: 'dracula', lineNumbers: true, indentUnit: 4,
+    value: DEFAULT_SCRIPT
+  });
+  scriptEditor.setValue(DEFAULT_SCRIPT);
+
+  templateEditor = CodeMirror.fromTextArea(document.getElementById('task-template-editor'), {
+    mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, indentUnit: 2,
+  });
+  templateEditor.setValue(DEFAULT_TEMPLATE);
+
+  loadAll();
+  loadBaseUrl();
+
+  document.getElementById('scriptModal').addEventListener('shown.bs.modal', () => scriptEditor.refresh());
+  document.getElementById('taskModal').addEventListener('shown.bs.modal', () => templateEditor.refresh());
+});
+
+function openGithubModal() {
+  api('/api/settings/github').then(r => {
+    document.getElementById('gh-token').value = r.token || '';
+    document.getElementById('gh-repo').value = r.repo || '';
+    document.getElementById('gh-status').style.display = 'none';
+  }).catch(() => {});
+  new bootstrap.Modal(document.getElementById('githubModal')).show();
+}
+
+async function saveGithub() {
+  const token = document.getElementById('gh-token').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim();
+  if (!token || !repo) { toast('请填写 Token 和仓库名', 'warning'); return; }
+  if (!repo.includes('/')) { toast('仓库名格式应为 用户名/仓库名', 'warning'); return; }
+  try {
+    await api('/api/settings/github', 'POST', { token, repo });
+    bootstrap.Modal.getInstance(document.getElementById('githubModal')).hide();
+    toast('GitHub 图床配置已保存', 'success');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function testGithub() {
+  const token = document.getElementById('gh-token').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim();
+  if (!token || !repo) { toast('请先填写 Token 和仓库名', 'warning'); return; }
+  const statusEl = document.getElementById('gh-status');
+  statusEl.innerHTML = '<span class="text-info">测试中...</span>';
+  statusEl.style.display = '';
+  try {
+    const [owner, repoName] = repo.split('/');
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+      headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
+    });
+    if (r.ok) {
+      const d = await r.json();
+      statusEl.innerHTML = `<span class="text-success">✓ 连接成功：${d.full_name}（${d.private ? '私有' : '公开'}）${d.private ? ' ⚠️ 请改为 Public 仓库' : ''}</span>`;
+    } else {
+      const d = await r.json();
+      statusEl.innerHTML = `<span class="text-danger">✗ 失败：${d.message}</span>`;
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<span class="text-danger">✗ 网络错误：${e.message}</span>`;
+  }
+}
+
+async function loadBaseUrl() {
+  try {
+    const r = await api('/api/settings/base-url');
+    if (r.base_url) document.getElementById('base-url-input').value = r.base_url;
+  } catch (_) {}
+}
+
+async function saveBaseUrl() {
+  const url = document.getElementById('base-url-input').value.trim();
+  if (!url) { toast('请输入服务器地址，如 http://192.168.1.100:8765', 'warning'); return; }
+  try {
+    await api('/api/settings/base-url', 'POST', { base_url: url });
+    toast('服务器地址已保存', 'success');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+const DEFAULT_SCRIPT = `# 通过 db 变量操作 MongoDB，将结果赋给 result
+# 示例：
+collection = db['your_collection']
+pipeline = [
+    {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+]
+result = list(collection.aggregate(pipeline))
+`;
+
+const DEFAULT_TEMPLATE = `<div class="report-container">
+  <table>
+    <thead>
+      <tr>
+        <th>区域</th>
+        <th>工号</th>
+        <th>姓名</th>
+        <th>本周招新人次</th>
+        <th>区域排名</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set ns = namespace(prev='') %}
+      {% for item in result %}
+      <tr>
+        {% set same_count = result | selectattr('区域', 'equalto', item.区域) | list | length %}
+        {% if item.区域 != ns.prev %}
+        <td class="region-cell" rowspan="{{ same_count }}">{{ item.区域 }}</td>
+        {% set ns.prev = item.区域 %}
+        {% endif %}
+        <td>{{ item.工号 }}</td>
+        <td>{{ item.姓名 }}</td>
+        <td>{{ item.本周招新人次 }}</td>
+        <td>{{ item.区域排名 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>`;
+
+// ── Load all data ────────────────────────────────────────────
+async function loadAll() {
+  [mongoConfigs, scripts, bots] = await Promise.all([
+    api('/api/mongo-configs/'),
+    api('/api/scripts/'),
+    api('/api/bots/'),
+  ]);
+  renderMongoList();
+  renderScriptList();
+  renderBotList();
+  await loadTasks();
+}
+
+async function loadTasks() {
+  const tasks = await api('/api/tasks/');
+  renderTaskList(tasks);
+}
+
+// ── API helper ───────────────────────────────────────────────
+async function api(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + url, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+function toast(msg, type = 'success') {
+  const id = 'toast-' + Date.now();
+  const colors = { success: 'bg-success', danger: 'bg-danger', warning: 'bg-warning text-dark', info: 'bg-info text-dark' };
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = `toast align-items-center text-white ${colors[type]} border-0 mb-2`;
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  document.getElementById('toast-container').appendChild(el);
+  new bootstrap.Toast(el, { delay: 3000 }).show();
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+}
+
+// ── MongoDB Configs ──────────────────────────────────────────
+function renderMongoList() {
+  const tbody = document.getElementById('mongo-list');
+  if (!mongoConfigs.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无配置</td></tr>'; return; }
+  tbody.innerHTML = mongoConfigs.map(c => `
+    <tr>
+      <td>${c.name}</td>
+      <td>${c.host}</td>
+      <td>${c.port}</td>
+      <td>${c.database}</td>
+      <td class="action-btns">
+        <button class="btn btn-sm btn-outline-primary" onclick="openMongoModal(${c.id})">编辑</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteMongo(${c.id})">删除</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openMongoModal(id) {
+  document.getElementById('mongo-id').value = '';
+  ['name','host','database','username','password','auth-source','uri'].forEach(f => document.getElementById('mongo-' + f).value = '');
+  document.getElementById('mongo-host').value = 'localhost';
+  document.getElementById('mongo-port').value = '27017';
+  if (id) {
+    const c = mongoConfigs.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('mongo-id').value = c.id;
+    document.getElementById('mongo-name').value = c.name;
+    document.getElementById('mongo-host').value = c.host;
+    document.getElementById('mongo-port').value = c.port;
+    document.getElementById('mongo-database').value = c.database;
+    document.getElementById('mongo-username').value = c.username || '';
+    document.getElementById('mongo-password').value = c.password || '';
+    document.getElementById('mongo-auth-source').value = c.auth_source || '';
+    document.getElementById('mongo-uri').value = c.uri || '';
+  }
+  new bootstrap.Modal(document.getElementById('mongoModal')).show();
+}
+
+function getMongoForm() {
+  return {
+    name: document.getElementById('mongo-name').value.trim(),
+    host: document.getElementById('mongo-host').value.trim() || 'localhost',
+    port: parseInt(document.getElementById('mongo-port').value) || 27017,
+    database: document.getElementById('mongo-database').value.trim(),
+    username: document.getElementById('mongo-username').value.trim() || null,
+    password: document.getElementById('mongo-password').value || null,
+    auth_source: document.getElementById('mongo-auth-source').value.trim() || null,
+    uri: document.getElementById('mongo-uri').value.trim() || null,
+  };
+}
+
+async function saveMongo() {
+  const data = getMongoForm();
+  if (!data.name || !data.database) { toast('请填写必填字段', 'warning'); return; }
+  try {
+    const id = document.getElementById('mongo-id').value;
+    if (id) await api(`/api/mongo-configs/${id}`, 'PUT', data);
+    else await api('/api/mongo-configs/', 'POST', data);
+    bootstrap.Modal.getInstance(document.getElementById('mongoModal')).hide();
+    mongoConfigs = await api('/api/mongo-configs/');
+    renderMongoList();
+    toast('保存成功');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function testMongo() {
+  const data = getMongoForm();
+  if (!data.database) { toast('请先填写数据库名', 'warning'); return; }
+  toast('连接测试中...', 'info');
+  try {
+    const r = await api('/api/mongo-configs/test-connection', 'POST', data);
+    toast(r.message, r.ok ? 'success' : 'danger');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function deleteMongo(id) {
+  if (!confirm('确认删除？')) return;
+  try {
+    await api(`/api/mongo-configs/${id}`, 'DELETE');
+    mongoConfigs = await api('/api/mongo-configs/');
+    renderMongoList();
+    toast('已删除');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+// ── Scripts ──────────────────────────────────────────────────
+function renderScriptList() {
+  const tbody = document.getElementById('script-list');
+  if (!scripts.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无脚本</td></tr>'; return; }
+  tbody.innerHTML = scripts.map(s => {
+    const cfg = mongoConfigs.find(c => c.id === s.mongo_config_id);
+    return `<tr>
+      <td>${s.name}</td>
+      <td>${s.description || '-'}</td>
+      <td>${cfg ? cfg.name : s.mongo_config_id}</td>
+      <td class="action-btns">
+        <button class="btn btn-sm btn-outline-primary" onclick="openScriptModal(${s.id})">编辑</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteScript(${s.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openScriptModal(id) {
+  const sel = document.getElementById('script-mongo-id');
+  sel.innerHTML = mongoConfigs.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('script-id').value = '';
+  document.getElementById('script-name').value = '';
+  document.getElementById('script-description').value = '';
+  document.getElementById('script-result').textContent = '（点击"运行预览"执行脚本）';
+  if (id) {
+    const s = scripts.find(x => x.id === id);
+    if (!s) return;
+    document.getElementById('script-id').value = s.id;
+    document.getElementById('script-name').value = s.name;
+    document.getElementById('script-description').value = s.description || '';
+    sel.value = s.mongo_config_id;
+    setTimeout(() => scriptEditor.setValue(s.content), 50);
+  } else {
+    setTimeout(() => scriptEditor.setValue(DEFAULT_SCRIPT), 50);
+  }
+  new bootstrap.Modal(document.getElementById('scriptModal')).show();
+}
+
+async function saveScript() {
+  const data = {
+    name: document.getElementById('script-name').value.trim(),
+    description: document.getElementById('script-description').value.trim() || null,
+    mongo_config_id: parseInt(document.getElementById('script-mongo-id').value),
+    content: scriptEditor.getValue(),
+  };
+  if (!data.name || !data.mongo_config_id) { toast('请填写必填字段', 'warning'); return; }
+  try {
+    const id = document.getElementById('script-id').value;
+    if (id) await api(`/api/scripts/${id}`, 'PUT', data);
+    else await api('/api/scripts/', 'POST', data);
+    bootstrap.Modal.getInstance(document.getElementById('scriptModal')).hide();
+    scripts = await api('/api/scripts/');
+    renderScriptList();
+    toast('保存成功');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function testScript() {
+  const id = document.getElementById('script-id').value;
+  if (!id) { toast('请先保存脚本再运行预览', 'warning'); return; }
+  document.getElementById('script-result').textContent = '执行中...';
+  try {
+    const r = await api(`/api/execute/script/${id}`, 'POST');
+    if (r.success) {
+      let out = '// 查询结果\n' + JSON.stringify(r.result, null, 2);
+      if (r.debug) {
+        out += '\n\n// 调试信息\n'
+          + `// 数据库: ${r.debug.database}\n`
+          + `// 连接URI: ${r.debug.uri}\n`
+          + `// 当前库集合: ${(r.debug.collections || []).join(', ') || '(空)'}\n`
+          + `// 结果类型: ${r.debug.result_type}, 数量: ${r.debug.result_count ?? '-'}`;
+      }
+      document.getElementById('script-result').textContent = out;
+    } else {
+      document.getElementById('script-result').textContent = '错误: ' + r.error;
+    }
+  } catch (e) {
+    document.getElementById('script-result').textContent = '请求失败: ' + e.message;
+  }
+}
+
+async function deleteScript(id) {
+  if (!confirm('确认删除？')) return;
+  try {
+    await api(`/api/scripts/${id}`, 'DELETE');
+    scripts = await api('/api/scripts/');
+    renderScriptList();
+    toast('已删除');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+// ── Bots ─────────────────────────────────────────────────────
+function renderBotList() {
+  const tbody = document.getElementById('bot-list');
+  if (!bots.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无机器人</td></tr>'; return; }
+  tbody.innerHTML = bots.map(b => `
+    <tr>
+      <td>${b.name}</td>
+      <td>${b.description || '-'}</td>
+      <td class="text-truncate" style="max-width:300px">${b.webhook_url}</td>
+      <td class="action-btns">
+        <button class="btn btn-sm btn-outline-primary" onclick="openBotModal(${b.id})">编辑</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteBot(${b.id})">删除</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openBotModal(id) {
+  document.getElementById('bot-id').value = '';
+  ['name','description','webhook','secret'].forEach(f => document.getElementById('bot-' + f).value = '');
+  if (id) {
+    const b = bots.find(x => x.id === id);
+    if (!b) return;
+    document.getElementById('bot-id').value = b.id;
+    document.getElementById('bot-name').value = b.name;
+    document.getElementById('bot-description').value = b.description || '';
+    document.getElementById('bot-webhook').value = b.webhook_url;
+    document.getElementById('bot-secret').value = b.secret || '';
+  }
+  new bootstrap.Modal(document.getElementById('botModal')).show();
+}
+
+async function saveBot() {
+  const data = {
+    name: document.getElementById('bot-name').value.trim(),
+    description: document.getElementById('bot-description').value.trim() || null,
+    webhook_url: document.getElementById('bot-webhook').value.trim(),
+    secret: document.getElementById('bot-secret').value.trim() || null,
+  };
+  if (!data.name || !data.webhook_url) { toast('请填写必填字段', 'warning'); return; }
+  try {
+    const id = document.getElementById('bot-id').value;
+    if (id) await api(`/api/bots/${id}`, 'PUT', data);
+    else await api('/api/bots/', 'POST', data);
+    bootstrap.Modal.getInstance(document.getElementById('botModal')).hide();
+    bots = await api('/api/bots/');
+    renderBotList();
+    toast('保存成功');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function testBot() {
+  const id = document.getElementById('bot-id').value;
+  if (!id) { toast('请先保存机器人再测试', 'warning'); return; }
+  try {
+    const r = await api(`/api/bots/${id}/test`, 'POST');
+    toast(r.message, r.ok ? 'success' : 'danger');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function deleteBot(id) {
+  if (!confirm('确认删除？')) return;
+  try {
+    await api(`/api/bots/${id}`, 'DELETE');
+    bots = await api('/api/bots/');
+    renderBotList();
+    toast('已删除');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+// ── Tasks ─────────────────────────────────────────────────────
+function renderTaskList(tasks) {
+  const tbody = document.getElementById('task-list');
+  if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无任务</td></tr>'; return; }
+  tbody.innerHTML = tasks.map(t => {
+    const script = scripts.find(s => s.id === t.script_id);
+    const bot = bots.find(b => b.id === t.bot_id);
+    const lastRun = t.last_run_at ? new Date(t.last_run_at).toLocaleString('zh-CN') : '-';
+    const statusBadge = t.enabled
+      ? '<span class="badge bg-success">启用</span>'
+      : '<span class="badge bg-secondary">停用</span>';
+    return `<tr>
+      <td>${t.name}</td>
+      <td>${script ? script.name : t.script_id}</td>
+      <td>${bot ? bot.name : t.bot_id}</td>
+      <td>${{image:'图片播报',markdown:'Markdown',text:'纯文本'}[t.msg_type] || t.msg_type}</td>
+      <td>${statusBadge}</td>
+      <td>${lastRun}${t.last_run_result ? '<br><small class="text-muted">' + t.last_run_result + '</small>' : ''}</td>
+      <td class="action-btns">
+        <button class="btn btn-sm btn-outline-success" onclick="runTask(${t.id})">执行</button>
+        <button class="btn btn-sm btn-outline-info" onclick="previewTask(${t.id})">预览</button>
+        <button class="btn btn-sm btn-outline-primary" onclick="openTaskModal(${t.id})">编辑</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteTask(${t.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function openTaskModal(id) {
+  const scriptSel = document.getElementById('task-script-id');
+  const botSel = document.getElementById('task-bot-id');
+  scriptSel.innerHTML = scripts.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  botSel.innerHTML = bots.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+  document.getElementById('task-id').value = '';
+  document.getElementById('task-name').value = '';
+  document.getElementById('task-msg-type').value = 'markdown';
+  document.getElementById('task-enabled').value = 'true';
+  if (id) {
+    try {
+      const t = await api(`/api/tasks/${id}`);
+      document.getElementById('task-id').value = t.id;
+      document.getElementById('task-name').value = t.name;
+      scriptSel.value = t.script_id;
+      botSel.value = t.bot_id;
+      document.getElementById('task-msg-type').value = t.msg_type;
+      document.getElementById('task-enabled').value = String(t.enabled);
+      setTimeout(() => templateEditor.setValue(t.message_template), 50);
+    } catch (e) { toast(e.message, 'danger'); return; }
+  } else {
+    setTimeout(() => templateEditor.setValue(DEFAULT_TEMPLATE), 50);
+  }
+  new bootstrap.Modal(document.getElementById('taskModal')).show();
+}
+
+async function suggestTemplate() {
+  const scriptId = document.getElementById('task-script-id').value;
+  const msgType = document.getElementById('task-msg-type').value;
+  if (!scriptId) { toast('请先选择查询脚本', 'warning'); return; }
+  toast('正在运行脚本分析数据结构...', 'info');
+  try {
+    const r = await api(`/api/execute/script/${scriptId}`, 'POST');
+    if (!r.success) { toast('脚本执行失败: ' + r.error, 'danger'); return; }
+
+    const result = r.result;
+    let fields = [], isList = false, sample = null;
+    if (Array.isArray(result) && result.length && typeof result[0] === 'object') {
+      isList = true;
+      fields = Object.keys(result[0]);
+      sample = result[0];
+    } else if (result && typeof result === 'object') {
+      fields = Object.keys(result);
+      sample = result;
+    }
+
+    // show field hint
+    const hintEl = document.getElementById('template-hint');
+    if (fields.length) {
+      hintEl.innerHTML = `<span class="text-success">检测到字段：${fields.map(f=>`<code>${f}</code>`).join(' ')}` +
+        (isList ? `&nbsp;·&nbsp;共 ${result.length} 条列表数据` : '') + '</span>';
+      hintEl.style.display = '';
+    }
+
+    // build suggested template
+    let tpl = '';
+    if (isList) {
+      const numFields = fields.filter(f => {
+        const v = sample[f];
+        return typeof v === 'number' || (typeof v === 'string' && /^[\d,\.]+$/.test(v));
+      });
+      const labelField = fields.find(f => f.includes('名') || f.includes('称') || f.includes('号') || f.includes('id') || f === '_id') || fields[0];
+      const valueField = numFields[0] || fields[fields.length - 1];
+
+      if (msgType === 'image') {
+        const groupField = fields[0];
+        const restFields = fields.slice(1);
+        const headerCols = fields.map(f => `<th>${f}</th>`).join('');
+        const dataCols = restFields.map(f => `<td>{{ item.${f} }}</td>`).join('\n          ');
+        tpl = `<div class="report-container">\n`;
+        tpl += `  <table>\n`;
+        tpl += `    <thead><tr>${headerCols}</tr></thead>\n`;
+        tpl += `    <tbody>\n`;
+        tpl += `    {% set ns = namespace(prev='') %}\n`;
+        tpl += `    {% for item in result %}\n`;
+        tpl += `      <tr>\n`;
+        tpl += `        {% set same_count = result | selectattr('${groupField}', 'equalto', item.${groupField}) | list | length %}\n`;
+        tpl += `        {% if item.${groupField} != ns.prev %}\n`;
+        tpl += `        <td class="region-cell" rowspan="{{ same_count }}">{{ item.${groupField} }}</td>\n`;
+        tpl += `        {% set ns.prev = item.${groupField} %}\n`;
+        tpl += `        {% endif %}\n`;
+        tpl += `        ${dataCols}\n`;
+        tpl += `      </tr>\n`;
+        tpl += `    {% endfor %}\n`;
+        tpl += `    </tbody>\n  </table>\n`;
+        tpl += `</div>`;
+      } else {
+        tpl = `## 今日统计报告\n\n`;
+        tpl += `{% for item in result | sort(attribute='${valueField}', reverse=True) %}\n`;
+        tpl += `- **{{ item.${labelField} }}**: {{ item.${valueField} }}\n`;
+        tpl += `{% endfor %}`;
+      }
+    } else if (fields.length) {
+      if (msgType === 'image') {
+        tpl = `<div class="report-container">\n  <div class="report-title">数据报表</div>\n  <table>\n    <thead><tr><th>指标</th><th>数值</th></tr></thead>\n    <tbody>\n`;
+        tpl += fields.map(f => `    <tr><td class="highlight">${f}</td><td>{{ ${f} }}</td></tr>`).join('\n');
+        tpl += `\n    </tbody>\n  </table>\n</div>`;
+      } else {
+        tpl = `## 统计报告\n\n` + fields.map(f => `- **${f}**: {{ ${f} }}`).join('\n');
+      }
+    }
+
+    if (tpl) {
+      templateEditor.setValue(tpl);
+      toast('推荐模板已填入，可根据需要调整', 'success');
+    } else {
+      toast('无法识别数据结构，请手动编写模板', 'warning');
+    }
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+async function saveTask() {
+  const data = {
+    name: document.getElementById('task-name').value.trim(),
+    script_id: parseInt(document.getElementById('task-script-id').value),
+    bot_id: parseInt(document.getElementById('task-bot-id').value),
+    message_template: templateEditor.getValue(),
+    msg_type: document.getElementById('task-msg-type').value,
+    enabled: document.getElementById('task-enabled').value === 'true',
+  };
+  if (!data.name || !data.script_id || !data.bot_id) { toast('请填写必填字段', 'warning'); return; }
+  try {
+    const id = document.getElementById('task-id').value;
+    if (id) await api(`/api/tasks/${id}`, 'PUT', data);
+    else await api('/api/tasks/', 'POST', data);
+    bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+    await loadTasks();
+    toast('保存成功');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+function _resetRunModal(title) {
+  document.getElementById('run-modal-title').textContent = title;
+  document.getElementById('run-status').className = 'alert alert-info mb-3';
+  document.getElementById('run-status').textContent = title === '预览' ? '渲染中...' : '执行中...';
+  document.getElementById('run-result').textContent = '';
+  document.getElementById('run-rendered').textContent = '';
+  document.getElementById('run-image').src = '';
+  document.getElementById('run-image-section').style.display = 'none';
+  document.getElementById('run-rendered-section').style.display = 'none';
+}
+
+function _showRunResult(r, sent) {
+  const statusEl = document.getElementById('run-status');
+  if (r.success !== false && (sent === undefined || sent)) {
+    statusEl.className = 'alert alert-success mb-3';
+    statusEl.textContent = sent ? '执行成功，消息已发送到钉钉' : '预览成功（未发送）';
+  } else if (r.success === false) {
+    const stage = { script:'脚本执行', template:'模板渲染', image_render:'图片生成' }[r.stage] || r.stage;
+    statusEl.className = 'alert alert-danger mb-3';
+    statusEl.textContent = `${stage}失败：${r.error}`;
+  } else {
+    statusEl.className = 'alert alert-success mb-3';
+    statusEl.textContent = '执行成功';
+  }
+
+  if (r.image_data) {
+    document.getElementById('run-image').src = r.image_data;
+    document.getElementById('run-image-section').style.display = '';
+  }
+  if (r.rendered) {
+    document.getElementById('run-rendered').textContent = r.rendered;
+    document.getElementById('run-rendered-section').style.display = '';
+  }
+
+  // field hints
+  let resultLabel = '脚本查询结果 <small class="text-muted">（可用于模板变量参考）</small>';
+  if (r.fields && r.fields.length) {
+    const fieldTags = r.fields.map(f => `<code class="me-1">${f}</code>`).join(' ');
+    resultLabel += `<br><span class="text-success">可用字段名：${fieldTags}</span>`;
+    if (Array.isArray(r.result)) {
+      resultLabel += `<span class="text-muted ms-2">（共 ${r.result.length} 条，模板中用 <code>result</code> 或 <code>items</code> 遍历）</span>`;
+    }
+  }
+  document.querySelector('#runModal .modal-body label:last-of-type').innerHTML = resultLabel;
+
+  document.getElementById('run-result').textContent = JSON.stringify(r.result, null, 2);
+}
+
+async function runTask(id) {
+  const modal = new bootstrap.Modal(document.getElementById('runModal'));
+  _resetRunModal('执行结果');
+  modal.show();
+  try {
+    const r = await api(`/api/execute/task/${id}`, 'POST');
+    _showRunResult(r, r.message_sent);
+    await loadTasks();
+  } catch (e) {
+    document.getElementById('run-status').className = 'alert alert-danger mb-3';
+    document.getElementById('run-status').textContent = '请求失败: ' + e.message;
+  }
+}
+
+async function previewTask(id) {
+  const modal = new bootstrap.Modal(document.getElementById('runModal'));
+  _resetRunModal('预览');
+  modal.show();
+  try {
+    const r = await api(`/api/execute/task/${id}/preview`, 'POST');
+    _showRunResult(r, false);
+  } catch (e) {
+    document.getElementById('run-status').className = 'alert alert-danger mb-3';
+    document.getElementById('run-status').textContent = '请求失败: ' + e.message;
+  }
+}
+
+async function deleteTask(id) {
+  if (!confirm('确认删除？')) return;
+  try {
+    await api(`/api/tasks/${id}`, 'DELETE');
+    await loadTasks();
+    toast('已删除');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+</script>
+</body>
+</html>

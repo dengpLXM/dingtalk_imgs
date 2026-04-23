@@ -1,0 +1,132 @@
+import os
+import json
+from datetime import datetime
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from database import get_db
+from models import Script, Task, DingTalkBot, MongoConfig
+from schemas import ExecuteResult
+from services.executor import run_script, render_template, render_html_template, format_result
+from services.dingtalk import send_message
+from services.html_renderer import render_html_to_image
+from services.image_host import upload_image
+
+router = APIRouter()
+
+REPORTS_DIR = Path("static/reports")
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+def _get_base_url() -> str:
+    return os.getenv("REPORT_BASE_URL", "").rstrip("/")
+
+
+def _save_report_image(task_id: int, img_bytes: bytes) -> str:
+    """Save image, return filename (without base URL)."""
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"task_{task_id}_{ts}.jpg"
+    (REPORTS_DIR / filename).write_bytes(img_bytes)
+    # keep only last 20 files to avoid disk bloat
+    files = sorted(REPORTS_DIR.glob("*.jpg"), key=lambda f: f.stat().st_mtime)
+    for old in files[:-20]:
+        old.unlink(missing_ok=True)
+    return filename
+
+
+@router.post("/script/{script_id}")
+def execute_script(script_id: int, db: Session = Depends(get_db)):
+    script = db.query(Script).filter(Script.id == script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    try:
+        result, debug = run_script(script.content, script.mongo_config)
+        return {"success": True, "result": result, "debug": debug}
+    except Exception as e:
+        return {"success": False, "error": str(e), "result": None, "debug": None}
+
+
+@router.post("/task/{task_id}/preview")
+async def preview_task(task_id: int, db: Session = Depends(get_db)):
+    """Run script + render template, return image preview and variable info. Does NOT send to DingTalk."""
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    try:
+        result, debug = run_script(task.script.content, task.script.mongo_config)
+    except Exception as e:
+        return {"success": False, "stage": "script", "error": str(e),
+                "result": None, "rendered": None, "image_data": None}
+
+    try:
+        if task.msg_type == "image":
+            rendered = render_html_template(task.message_template, result)
+        else:
+            rendered = render_template(task.message_template, result)
+    except Exception as e:
+        return {"success": False, "stage": "template", "error": str(e),
+                "result": result, "rendered": None, "image_data": None}
+
+    image_data = None
+    if task.msg_type == "image":
+        try:
+            img_bytes, _, _ = await render_html_to_image(rendered)
+            import base64
+            image_data = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode()
+        except Exception as e:
+            return {"success": False, "stage": "image_render", "error": str(e),
+                    "result": result, "rendered": rendered, "image_data": None}
+
+    # extract field names for template hints
+    fields: list[str] = []
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        fields = list(result[0].keys())
+    elif isinstance(result, dict):
+        fields = list(result.keys())
+
+    return {
+        "success": True,
+        "stage": "ok",
+        "error": None,
+        "result": result,
+        "rendered": rendered,
+        "image_data": image_data,
+        "fields": fields,
+    }
+
+
+@router.post("/task/{task_id}", response_model=ExecuteResult)
+async def execute_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    result = None
+    error = None
+    message_sent = False
+
+    try:
+        result, _ = run_script(task.script.content, task.script.mongo_config)
+        if task.msg_type == "image":
+            html = render_html_template(task.message_template, result)
+            img_bytes, _, _ = await render_html_to_image(html)
+            img_url = upload_image(img_bytes, task.id)
+            send_message(task.bot, "image", img_url)
+        else:
+            message = render_template(task.message_template, result)
+            send_message(task.bot, task.msg_type, message)
+        message_sent = True
+        task.last_run_result = "成功"
+    except Exception as e:
+        error = str(e)
+        task.last_run_result = f"失败: {error}"
+
+    task.last_run_at = datetime.utcnow()
+    db.commit()
+
+    return ExecuteResult(
+        success=error is None,
+        result=result,
+        message_sent=message_sent,
+        error=error,
+    )
