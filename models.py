@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Integer, String, Text, Boolean, DateTime, Float, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -61,6 +61,7 @@ class Task(Base):
     bot_id: Mapped[int] = mapped_column(Integer, ForeignKey("dingtalk_bots.id"), nullable=False)
     message_template: Mapped[str] = mapped_column(Text, nullable=False)
     msg_type: Mapped[str] = mapped_column(String(20), default="markdown")
+    cron_expression: Mapped[Optional[str]] = mapped_column(String(100))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_run_result: Mapped[Optional[str]] = mapped_column(Text)
@@ -69,3 +70,20 @@ class Task(Base):
 
     script: Mapped["Script"] = relationship("Script", back_populates="tasks")
     bot: Mapped["DingTalkBot"] = relationship("DingTalkBot", back_populates="tasks")
+    logs: Mapped[list["TaskLog"]] = relationship("TaskLog", back_populates="task", cascade="all, delete-orphan")
+
+
+class TaskLog(Base):
+    __tablename__ = "task_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)  # manual / scheduled
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    stage: Mapped[Optional[str]] = mapped_column(String(30))  # script / template / image_render / send
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    detail: Mapped[Optional[str]] = mapped_column(Text)  # extra debug info / traceback
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    task: Mapped["Task"] = relationship("Task", back_populates="logs")

@@ -85,7 +85,7 @@
         <button class="btn btn-primary btn-sm" onclick="openTaskModal()">+ 新增任务</button>
       </div>
       <table class="table table-bordered table-hover">
-        <thead><tr><th>名称</th><th>脚本</th><th>机器人</th><th>消息类型</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead>
+        <thead><tr><th>名称</th><th>脚本</th><th>机器人</th><th>消息类型</th><th>定时配置</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead>
         <tbody id="task-list"></tbody>
       </table>
     </div>
@@ -202,6 +202,24 @@
               <option value="false">停用</option>
             </select>
           </div>
+          <div class="col-md-8">
+            <label class="form-label">定时执行（Cron 表达式）</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="task-cron" placeholder="如: 0 9 * * * （每天9点）留空则不定时执行">
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">常用</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 9 * * *')">每天 09:00</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 18 * * *')">每天 18:00</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 9 * * 1-5')">工作日 09:00</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 9,18 * * *')">每天 09:00 和 18:00</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 */2 * * *')">每2小时</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('*/30 * * * *')">每30分钟</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 9 * * 1')">每周一 09:00</a></li>
+                <li><a class="dropdown-item" href="#" onclick="setCron('0 9 1 * *')">每月1号 09:00</a></li>
+              </ul>
+            </div>
+            <div class="form-text" id="cron-desc">格式：分 时 日 月 星期 &nbsp;|&nbsp; 留空表示仅手动执行</div>
+          </div>
         </div>
         <div class="d-flex justify-content-between align-items-center mb-1">
           <label class="form-label mb-0">消息模板（Jinja2 语法，可用变量：<code>{{ result }}</code> 原始数据，<code>{{ result_json }}</code> JSON字符串，dict结果可直接用字段名）</label>
@@ -253,6 +271,59 @@
         </div>
         <label class="form-label">脚本查询结果 <small class="text-muted">（可用于模板变量参考）</small></label>
         <div class="result-box" id="run-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 执行日志 Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="log-modal-title">执行日志</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" id="log-filter-status" style="width:auto" onchange="reloadLogs()">
+              <option value="">全部状态</option>
+              <option value="true">成功</option>
+              <option value="false">失败</option>
+            </select>
+            <span class="text-muted" style="font-size:13px" id="log-count"></span>
+          </div>
+          <button class="btn btn-sm btn-outline-danger" onclick="clearLogs()">清空日志</button>
+        </div>
+        <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+          <table class="table table-bordered table-hover table-sm" style="font-size:13px">
+            <thead class="sticky-top">
+              <tr>
+                <th style="width:155px">时间</th>
+                <th style="width:60px">触发</th>
+                <th style="width:60px">结果</th>
+                <th style="width:80px">阶段</th>
+                <th style="width:80px">耗时</th>
+                <th>错误信息</th>
+                <th style="width:50px">详情</th>
+              </tr>
+            </thead>
+            <tbody id="log-list"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 日志详情 Modal -->
+<div class="modal fade" id="logDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">错误详情</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="result-box" id="log-detail-content" style="max-height:500px"></div>
       </div>
     </div>
   </div>
@@ -714,9 +785,59 @@ async function deleteBot(id) {
 }
 
 // ── Tasks ─────────────────────────────────────────────────────
+const CRON_PRESETS = {
+  '0 9 * * *': '每天 09:00',
+  '0 18 * * *': '每天 18:00',
+  '0 9 * * 1-5': '工作日 09:00',
+  '0 9,18 * * *': '每天 09:00/18:00',
+  '0 */2 * * *': '每2小时',
+  '*/30 * * * *': '每30分钟',
+  '0 9 * * 1': '每周一 09:00',
+  '0 9 1 * *': '每月1号 09:00',
+};
+
+function describeCron(expr) {
+  if (!expr) return '<span class="text-muted">未配置</span>';
+  const label = CRON_PRESETS[expr];
+  if (label) return `<span class="badge bg-primary">${label}</span>`;
+  return `<span class="badge bg-info">${expr}</span>`;
+}
+
+function setCron(expr) {
+  document.getElementById('task-cron').value = expr;
+  updateCronDesc();
+}
+
+function updateCronDesc() {
+  const expr = document.getElementById('task-cron').value.trim();
+  const descEl = document.getElementById('cron-desc');
+  if (!expr) {
+    descEl.innerHTML = '格式：分 时 日 月 星期 &nbsp;|&nbsp; 留空表示仅手动执行';
+    return;
+  }
+  const label = CRON_PRESETS[expr];
+  descEl.innerHTML = label
+    ? `<span class="text-success">✓ ${label}</span>`
+    : `<span class="text-info">自定义: ${expr}</span>`;
+}
+
 function renderTaskList(tasks) {
   const tbody = document.getElementById('task-list');
-  if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无任务</td></tr>'; return; }
+  if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无任务</td></tr>'; return; }
+
+  const nextRunMap = {};
+  api('/api/scheduler/status').then(jobs => {
+    jobs.forEach(j => {
+      if (j.next_run_at) nextRunMap[j.task_id] = j.next_run_at;
+    });
+    document.querySelectorAll('.next-run-time').forEach(el => {
+      const tid = parseInt(el.dataset.taskId);
+      if (nextRunMap[tid]) {
+        el.textContent = '下次: ' + new Date(nextRunMap[tid]).toLocaleString('zh-CN');
+      }
+    });
+  }).catch(() => {});
+
   tbody.innerHTML = tasks.map(t => {
     const script = scripts.find(s => s.id === t.script_id);
     const bot = bots.find(b => b.id === t.bot_id);
@@ -724,16 +845,19 @@ function renderTaskList(tasks) {
     const statusBadge = t.enabled
       ? '<span class="badge bg-success">启用</span>'
       : '<span class="badge bg-secondary">停用</span>';
+    const cronBadge = describeCron(t.cron_expression);
     return `<tr>
       <td>${t.name}</td>
       <td>${script ? script.name : t.script_id}</td>
       <td>${bot ? bot.name : t.bot_id}</td>
       <td>${{image:'图片播报',markdown:'Markdown',text:'纯文本'}[t.msg_type] || t.msg_type}</td>
+      <td>${cronBadge}${t.cron_expression && t.enabled ? '<br><small class="text-muted next-run-time" data-task-id="' + t.id + '"></small>' : ''}</td>
       <td>${statusBadge}</td>
       <td>${lastRun}${t.last_run_result ? '<br><small class="text-muted">' + t.last_run_result + '</small>' : ''}</td>
       <td class="action-btns">
         <button class="btn btn-sm btn-outline-success" onclick="runTask(${t.id})">执行</button>
         <button class="btn btn-sm btn-outline-info" onclick="previewTask(${t.id})">预览</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="openLogModal(${t.id}, '${t.name.replace(/'/g,"\\'")}')">日志</button>
         <button class="btn btn-sm btn-outline-primary" onclick="openTaskModal(${t.id})">编辑</button>
         <button class="btn btn-sm btn-outline-danger" onclick="deleteTask(${t.id})">删除</button>
       </td>
@@ -750,6 +874,8 @@ async function openTaskModal(id) {
   document.getElementById('task-name').value = '';
   document.getElementById('task-msg-type').value = 'markdown';
   document.getElementById('task-enabled').value = 'true';
+  document.getElementById('task-cron').value = '';
+  updateCronDesc();
   if (id) {
     try {
       const t = await api(`/api/tasks/${id}`);
@@ -759,6 +885,8 @@ async function openTaskModal(id) {
       botSel.value = t.bot_id;
       document.getElementById('task-msg-type').value = t.msg_type;
       document.getElementById('task-enabled').value = String(t.enabled);
+      document.getElementById('task-cron').value = t.cron_expression || '';
+      updateCronDesc();
       setTimeout(() => templateEditor.setValue(t.message_template), 50);
     } catch (e) { toast(e.message, 'danger'); return; }
   } else {
@@ -853,12 +981,14 @@ async function suggestTemplate() {
 }
 
 async function saveTask() {
+  const cronVal = document.getElementById('task-cron').value.trim();
   const data = {
     name: document.getElementById('task-name').value.trim(),
     script_id: parseInt(document.getElementById('task-script-id').value),
     bot_id: parseInt(document.getElementById('task-bot-id').value),
     message_template: templateEditor.getValue(),
     msg_type: document.getElementById('task-msg-type').value,
+    cron_expression: cronVal || null,
     enabled: document.getElementById('task-enabled').value === 'true',
   };
   if (!data.name || !data.script_id || !data.bot_id) { toast('请填写必填字段', 'warning'); return; }
@@ -953,6 +1083,97 @@ async function deleteTask(id) {
     await api(`/api/tasks/${id}`, 'DELETE');
     await loadTasks();
     toast('已删除');
+  } catch (e) { toast(e.message, 'danger'); }
+}
+
+// ── Task Logs ────────────────────────────────────────────────
+let _logTaskId = null;
+
+const STAGE_LABELS = {
+  script: '脚本执行',
+  template: '模板渲染',
+  image_render: '图片生成',
+  upload: '图片上传',
+  send: '消息发送',
+  ok: '完成',
+};
+
+function openLogModal(taskId, taskName) {
+  _logTaskId = taskId;
+  document.getElementById('log-modal-title').textContent = `执行日志 — ${taskName}`;
+  document.getElementById('log-filter-status').value = '';
+  reloadLogs();
+  new bootstrap.Modal(document.getElementById('logModal')).show();
+}
+
+async function reloadLogs() {
+  if (!_logTaskId) return;
+  const statusFilter = document.getElementById('log-filter-status').value;
+  let url = `/api/tasks/${_logTaskId}/logs?limit=100`;
+  if (statusFilter !== '') url += `&success=${statusFilter}`;
+  try {
+    const logs = await api(url);
+    renderLogList(logs);
+  } catch (e) {
+    document.getElementById('log-list').innerHTML = `<tr><td colspan="7" class="text-center text-danger">加载失败: ${e.message}</td></tr>`;
+  }
+}
+
+function renderLogList(logs) {
+  const tbody = document.getElementById('log-list');
+  document.getElementById('log-count').textContent = `共 ${logs.length} 条`;
+  if (!logs.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无执行日志</td></tr>';
+    return;
+  }
+  tbody.innerHTML = logs.map(l => {
+    const time = new Date(l.created_at).toLocaleString('zh-CN');
+    const triggerBadge = l.trigger === 'scheduled'
+      ? '<span class="badge bg-info">定时</span>'
+      : '<span class="badge bg-secondary">手动</span>';
+    const resultBadge = l.success
+      ? '<span class="badge bg-success">成功</span>'
+      : '<span class="badge bg-danger">失败</span>';
+    const stage = STAGE_LABELS[l.stage] || l.stage || '-';
+    const duration = l.duration_ms != null ? (l.duration_ms >= 1000 ? (l.duration_ms / 1000).toFixed(1) + 's' : Math.round(l.duration_ms) + 'ms') : '-';
+    const errorText = l.error ? `<span class="text-danger">${escHtml(l.error).substring(0, 200)}</span>` : '<span class="text-muted">-</span>';
+    const detailBtn = l.detail ? `<button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="showLogDetail(${l.id})">查看</button>` : '-';
+    return `<tr${l.success ? '' : ' class="table-danger"'}>
+      <td>${time}</td>
+      <td>${triggerBadge}</td>
+      <td>${resultBadge}</td>
+      <td>${stage}</td>
+      <td>${duration}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${errorText}</td>
+      <td>${detailBtn}</td>
+    </tr>`;
+  }).join('');
+  window._logData = logs;
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showLogDetail(logId) {
+  const log = (window._logData || []).find(l => l.id === logId);
+  if (!log) return;
+  let content = '';
+  if (log.error) content += `错误: ${log.error}\n\n`;
+  if (log.detail) content += log.detail;
+  document.getElementById('log-detail-content').textContent = content || '无详细信息';
+  new bootstrap.Modal(document.getElementById('logDetailModal')).show();
+}
+
+async function clearLogs() {
+  if (!_logTaskId) return;
+  if (!confirm('确认清空该任务所有日志？')) return;
+  try {
+    await api(`/api/tasks/${_logTaskId}/logs`, 'DELETE');
+    reloadLogs();
+    toast('日志已清空');
   } catch (e) { toast(e.message, 'danger'); }
 }
 </script>

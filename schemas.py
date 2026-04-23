@@ -82,6 +82,7 @@ class TaskBase(BaseModel):
     bot_id: int
     message_template: str
     msg_type: str = "markdown"
+    cron_expression: Optional[str] = None
     enabled: bool = True
 
 
@@ -99,6 +100,20 @@ class TaskOut(TaskBase):
     last_run_result: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TaskLogOut(BaseModel):
+    id: int
+    task_id: int
+    trigger: str
+    success: bool
+    stage: Optional[str] = None
+    duration_ms: Optional[float] = None
+    error: Optional[str] = None
+    detail: Optional[str] = None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

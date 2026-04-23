@@ -97,6 +97,8 @@ async def preview_task(task_id: int, db: Session = Depends(get_db)):
 
 @router.post("/task/{task_id}", response_model=ExecuteResult)
 async def execute_task(task_id: int, db: Session = Depends(get_db)):
+    from routers.task_logs import log_execution
+
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -105,21 +107,36 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
     error = None
     message_sent = False
 
-    try:
-        result, _ = run_script(task.script.content, task.script.mongo_config)
-        if task.msg_type == "image":
-            html = render_html_template(task.message_template, result)
-            img_bytes, _, _ = await render_html_to_image(html)
-            img_url = upload_image(img_bytes, task.id)
-            send_message(task.bot, "image", img_url)
-        else:
-            message = render_template(task.message_template, result)
-            send_message(task.bot, task.msg_type, message)
-        message_sent = True
-        task.last_run_result = "成功"
-    except Exception as e:
-        error = str(e)
-        task.last_run_result = f"失败: {error}"
+    with log_execution(task.id, "manual", db) as log_entry:
+        try:
+            log_entry.stage = "script"
+            result, _ = run_script(task.script.content, task.script.mongo_config)
+
+            if task.msg_type == "image":
+                log_entry.stage = "template"
+                html = render_html_template(task.message_template, result)
+                log_entry.stage = "image_render"
+                img_bytes, _, _ = await render_html_to_image(html)
+                log_entry.stage = "upload"
+                img_url = upload_image(img_bytes, task.id)
+                log_entry.stage = "send"
+                send_message(task.bot, "image", img_url)
+            else:
+                log_entry.stage = "template"
+                message = render_template(task.message_template, result)
+                log_entry.stage = "send"
+                send_message(task.bot, task.msg_type, message)
+
+            message_sent = True
+            task.last_run_result = "成功"
+            log_entry.success = True
+            log_entry.stage = "ok"
+        except Exception as e:
+            error = str(e)
+            task.last_run_result = f"失败: {error}"
+            log_entry.error = error
+            import traceback
+            log_entry.detail = traceback.format_exc()
 
     task.last_run_at = datetime.utcnow()
     db.commit()

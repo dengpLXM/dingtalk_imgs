@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Task
 from schemas import TaskCreate, TaskUpdate, TaskOut
+from services.scheduler import sync_jobs
 
 router = APIRouter()
 
@@ -26,6 +27,7 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     db.add(t)
     db.commit()
     db.refresh(t)
+    sync_jobs()
     return t
 
 
@@ -38,6 +40,7 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
         setattr(t, k, v)
     db.commit()
     db.refresh(t)
+    sync_jobs()
     return t
 
 
@@ -48,4 +51,5 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
     db.delete(t)
     db.commit()
+    sync_jobs()
     return {"ok": True}
