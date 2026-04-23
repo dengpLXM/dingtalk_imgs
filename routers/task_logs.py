@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import time
 import traceback
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -16,7 +19,7 @@ MAX_LOGS_PER_TASK = 100
 
 
 @contextmanager
-def log_execution(task_id: int, trigger: str, db: Session | None = None):
+def log_execution(task_id: int, trigger: str, db: Optional[Session] = None):
     """Context manager that records a TaskLog entry.
 
     Usage::
@@ -79,7 +82,7 @@ def get_task_logs(
     task_id: int,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    success: bool | None = Query(None),
+    success: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
 ):
     q = db.query(TaskLog).filter(TaskLog.task_id == task_id)
