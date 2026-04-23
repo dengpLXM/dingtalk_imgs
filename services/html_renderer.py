@@ -1,4 +1,5 @@
 """Render HTML to image using Playwright headless browser."""
+import os
 import io
 import hashlib
 import base64
@@ -6,9 +7,24 @@ import base64
 _browser = None
 
 
+def _ensure_browsers_path():
+    """Read PLAYWRIGHT_BROWSERS_PATH from .env directly, overriding sandbox defaults."""
+    from pathlib import Path
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        if line.startswith("PLAYWRIGHT_BROWSERS_PATH="):
+            path = line.split("=", 1)[1].strip()
+            if os.path.isdir(path):
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = path
+            return
+
+
 async def _get_browser():
     global _browser
     if _browser is None:
+        _ensure_browsers_path()
         from playwright.async_api import async_playwright
         pw = await async_playwright().start()
         _browser = await pw.chromium.launch(headless=True)
