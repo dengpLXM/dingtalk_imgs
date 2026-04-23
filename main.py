@@ -68,7 +68,7 @@ def set_base_url(body: dict):
     _env_set("REPORT_BASE_URL", url)
     return {"ok": True, "base_url": url}
 
-
+# 测试
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
