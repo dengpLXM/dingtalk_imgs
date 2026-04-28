@@ -39,7 +39,11 @@ def execute_script(script_id: int, db: Session = Depends(get_db)):
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
     try:
-        result, debug = run_script(script.content, script.mongo_config)
+        result, debug = run_script(
+            script.content,
+            script.mongo_config,
+            script.script_format,
+        )
         return {"success": True, "result": result, "debug": debug}
     except Exception as e:
         return {"success": False, "error": str(e), "result": None, "debug": None}
@@ -53,7 +57,11 @@ async def preview_task(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
 
     try:
-        result, debug = run_script(task.script.content, task.script.mongo_config)
+        result, debug = run_script(
+            task.script.content,
+            task.script.mongo_config,
+            task.script.script_format,
+        )
     except Exception as e:
         return {"success": False, "stage": "script", "error": str(e),
                 "result": None, "rendered": None, "image_data": None}
@@ -110,7 +118,11 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
     with log_execution(task.id, "manual", db) as log_entry:
         try:
             log_entry.stage = "script"
-            result, _ = run_script(task.script.content, task.script.mongo_config)
+            result, _ = run_script(
+                task.script.content,
+                task.script.mongo_config,
+                task.script.script_format,
+            )
 
             if task.msg_type == "image":
                 log_entry.stage = "template"
@@ -125,12 +137,13 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
                     "image",
                     img_url,
                     image_intro_text=task.image_message_text,
+                    at_all=task.at_all,
                 )
             else:
                 log_entry.stage = "template"
                 message = render_template(task.message_template, result)
                 log_entry.stage = "send"
-                send_message(task.bot, task.msg_type, message)
+                send_message(task.bot, task.msg_type, message, at_all=task.at_all)
 
             message_sent = True
             task.last_run_result = "成功"

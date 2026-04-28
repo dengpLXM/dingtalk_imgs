@@ -40,7 +40,11 @@ async def _execute_task(task_id: int) -> None:
         with log_execution(task.id, "scheduled", db) as log_entry:
             try:
                 log_entry.stage = "script"
-                result, _ = run_script(task.script.content, task.script.mongo_config)
+                result, _ = run_script(
+                    task.script.content,
+                    task.script.mongo_config,
+                    task.script.script_format,
+                )
 
                 if task.msg_type == "image":
                     log_entry.stage = "template"
@@ -55,12 +59,13 @@ async def _execute_task(task_id: int) -> None:
                         "image",
                         img_url,
                         image_intro_text=task.image_message_text,
+                        at_all=task.at_all,
                     )
                 else:
                     log_entry.stage = "template"
                     message = render_template(task.message_template, result)
                     log_entry.stage = "send"
-                    send_message(task.bot, task.msg_type, message)
+                    send_message(task.bot, task.msg_type, message, at_all=task.at_all)
 
                 task.last_run_result = "成功（定时）"
                 log_entry.success = True

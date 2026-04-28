@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Script
+from models import Script, MongoConfig
 from schemas import ScriptCreate, ScriptUpdate, ScriptOut
 
 router = APIRouter()
@@ -22,7 +22,14 @@ def get_script(script_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=ScriptOut)
 def create_script(data: ScriptCreate, db: Session = Depends(get_db)):
-    s = Script(**data.model_dump())
+    payload = data.model_dump()
+    payload["script_format"] = (payload.get("script_format") or "mongodb").lower()
+    cfg = db.query(MongoConfig).filter(MongoConfig.id == payload["mongo_config_id"]).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Database config not found")
+    if payload["script_format"] != (cfg.db_type or "").lower():
+        raise HTTPException(status_code=400, detail="脚本格式需与数据库配置类型一致")
+    s = Script(**payload)
     db.add(s)
     db.commit()
     db.refresh(s)
@@ -34,7 +41,14 @@ def update_script(script_id: int, data: ScriptUpdate, db: Session = Depends(get_
     s = db.query(Script).filter(Script.id == script_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Script not found")
-    for k, v in data.model_dump().items():
+    payload = data.model_dump()
+    payload["script_format"] = (payload.get("script_format") or "mongodb").lower()
+    cfg = db.query(MongoConfig).filter(MongoConfig.id == payload["mongo_config_id"]).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Database config not found")
+    if payload["script_format"] != (cfg.db_type or "").lower():
+        raise HTTPException(status_code=400, detail="脚本格式需与数据库配置类型一致")
+    for k, v in payload.items():
         setattr(s, k, v)
     db.commit()
     db.refresh(s)

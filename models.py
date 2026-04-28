@@ -10,6 +10,7 @@ class MongoConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    db_type: Mapped[str] = mapped_column(String(20), default="mongodb")
     host: Mapped[str] = mapped_column(String(200), default="localhost")
     port: Mapped[int] = mapped_column(Integer, default=27017)
     database: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -30,6 +31,7 @@ class Script(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     mongo_config_id: Mapped[int] = mapped_column(Integer, ForeignKey("mongo_configs.id"), nullable=False)
+    script_format: Mapped[str] = mapped_column(String(20), default="mongodb")
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -65,6 +67,7 @@ class Task(Base):
     msg_type: Mapped[str] = mapped_column(String(20), default="markdown")
     cron_expression: Mapped[Optional[str]] = mapped_column(String(100))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    at_all: Mapped[bool] = mapped_column(Boolean, default=False)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_run_result: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class MongoConfigBase(BaseModel):
     name: str
+    db_type: str = "mongodb"
     host: str = "localhost"
     port: int = 27017
     database: str
@@ -34,6 +35,7 @@ class ScriptBase(BaseModel):
     name: str
     description: Optional[str] = None
     mongo_config_id: int
+    script_format: str = "mongodb"
     content: str
 
 
@@ -88,6 +90,10 @@ class TaskBase(BaseModel):
     msg_type: str = "markdown"
     cron_expression: Optional[str] = None
     enabled: bool = True
+    at_all: bool = Field(
+        default=False,
+        description="发送时是否 @所有人（钉钉群内需在机器人设置中允许）",
+    )
 
 
 class TaskCreate(TaskBase):

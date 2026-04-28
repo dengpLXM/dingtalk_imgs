@@ -34,7 +34,7 @@
 
 <div class="container-fluid px-4">
   <ul class="nav nav-tabs" id="mainTab">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-mongo">MongoDB 配置</a></li>
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-mongo">数据库配置</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-scripts">查询脚本</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-bots">钉钉机器人</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-tasks">任务映射</a></li>
@@ -42,14 +42,14 @@
 
   <div class="tab-content">
 
-    <!-- MongoDB 配置 -->
+    <!-- 数据库配置 -->
     <div class="tab-pane fade show active" id="tab-mongo">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">MongoDB 连接配置</h5>
+        <h5 class="mb-0">数据库连接配置</h5>
         <button class="btn btn-primary btn-sm" onclick="openMongoModal()">+ 新增配置</button>
       </div>
       <table class="table table-bordered table-hover">
-        <thead><tr><th>名称</th><th>主机</th><th>端口</th><th>数据库</th><th>操作</th></tr></thead>
+        <thead><tr><th>名称</th><th>类型</th><th>主机</th><th>端口</th><th>数据库</th><th>操作</th></tr></thead>
         <tbody id="mongo-list"></tbody>
       </table>
     </div>
@@ -61,7 +61,7 @@
         <button class="btn btn-primary btn-sm" onclick="openScriptModal()">+ 新增脚本</button>
       </div>
       <table class="table table-bordered table-hover">
-        <thead><tr><th>名称</th><th>描述</th><th>MongoDB配置</th><th>操作</th></tr></thead>
+        <thead><tr><th>名称</th><th>描述</th><th>数据库配置</th><th>脚本格式</th><th>操作</th></tr></thead>
         <tbody id="script-list"></tbody>
       </table>
     </div>
@@ -85,7 +85,7 @@
         <button class="btn btn-primary btn-sm" onclick="openTaskModal()">+ 新增任务</button>
       </div>
       <table class="table table-bordered table-hover">
-        <thead><tr><th>名称</th><th>脚本</th><th>机器人</th><th>消息类型</th><th>定时配置</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead>
+        <thead><tr><th>名称</th><th>脚本</th><th>机器人</th><th>消息类型</th><th>@全员</th><th>定时配置</th><th>状态</th><th>最后执行</th><th>操作</th></tr></thead>
         <tbody id="task-list"></tbody>
       </table>
     </div>
@@ -93,24 +93,31 @@
   </div>
 </div>
 
-<!-- MongoDB 配置 Modal -->
+<!-- 数据库配置 Modal -->
 <div class="modal fade" id="mongoModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">MongoDB 配置</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header"><h5 class="modal-title">数据库配置</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="hidden" id="mongo-id">
         <div class="row g-3">
-          <div class="col-md-6"><label class="form-label">配置名称 *</label><input type="text" class="form-control" id="mongo-name" placeholder="如: 生产环境"></div>
-          <div class="col-md-6"><label class="form-label">数据库名 *</label><input type="text" class="form-control" id="mongo-database" placeholder="mydb"></div>
+          <div class="col-md-4"><label class="form-label">配置名称 *</label><input type="text" class="form-control" id="mongo-name" placeholder="如: 生产环境"></div>
+          <div class="col-md-4"><label class="form-label">数据库类型 *</label>
+            <select class="form-select" id="mongo-db-type">
+              <option value="mongodb">MongoDB</option>
+              <option value="mysql">MySQL</option>
+              <option value="pgsql">PostgreSQL</option>
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">数据库名 *</label><input type="text" class="form-control" id="mongo-database" placeholder="mydb"></div>
           <div class="col-md-8"><label class="form-label">主机</label><input type="text" class="form-control" id="mongo-host" value="localhost"></div>
           <div class="col-md-4"><label class="form-label">端口</label><input type="number" class="form-control" id="mongo-port" value="27017"></div>
           <div class="col-md-6"><label class="form-label">用户名</label><input type="text" class="form-control" id="mongo-username"></div>
           <div class="col-md-6"><label class="form-label">密码</label><input type="password" class="form-control" id="mongo-password"></div>
-          <div class="col-md-6"><label class="form-label">认证数据库</label><input type="text" class="form-control" id="mongo-auth-source" placeholder="admin"></div>
+          <div class="col-md-6"><label class="form-label">认证数据库（仅 MongoDB）</label><input type="text" class="form-control" id="mongo-auth-source" placeholder="admin"></div>
           <div class="col-12">
-            <label class="form-label">完整 URI（优先使用，留空则用上面字段拼接）</label>
-            <input type="text" class="form-control" id="mongo-uri" placeholder="mongodb://user:pass@host:port/db?authSource=admin">
+            <label class="form-label">完整 URI（优先使用，留空则按数据库类型自动拼接）</label>
+            <input type="text" class="form-control" id="mongo-uri" placeholder="mongodb://... 或 mysql+pymysql://... 或 postgresql+psycopg2://...">
           </div>
         </div>
       </div>
@@ -132,10 +139,17 @@
         <input type="hidden" id="script-id">
         <div class="row g-3 mb-3">
           <div class="col-md-4"><label class="form-label">脚本名称 *</label><input type="text" class="form-control" id="script-name"></div>
-          <div class="col-md-4"><label class="form-label">MongoDB 配置 *</label><select class="form-select" id="script-mongo-id"></select></div>
+          <div class="col-md-3"><label class="form-label">数据库配置 *</label><select class="form-select" id="script-mongo-id"></select></div>
+          <div class="col-md-3"><label class="form-label">脚本格式 *</label>
+            <select class="form-select" id="script-format" disabled>
+              <option value="mongodb">MongoDB</option>
+              <option value="mysql">MySQL</option>
+              <option value="pgsql">PostgreSQL</option>
+            </select>
+          </div>
           <div class="col-md-4"><label class="form-label">描述</label><input type="text" class="form-control" id="script-description"></div>
         </div>
-        <label class="form-label">Python 脚本（通过 <code>db</code> 变量访问 MongoDB，将结果赋给 <code>result</code>）</label>
+        <label class="form-label">数据库脚本（系统会自动转换成 Python 执行脚本）</label>
         <textarea id="script-editor"></textarea>
         <div class="mt-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -201,6 +215,13 @@
               <option value="true">启用</option>
               <option value="false">停用</option>
             </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label d-block">推送时 @所有人</label>
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" id="task-at-all">
+              <label class="form-check-label" for="task-at-all">开启（需在群内为机器人勾选「@所有人」权限）</label>
+            </div>
           </div>
           <div class="col-md-8">
             <label class="form-label">定时执行（Cron 表达式）</label>
@@ -375,6 +396,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/python/python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/xml/xml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/sql/sql.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/css/css.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/htmlmixed/htmlmixed.min.js"></script>
 
@@ -382,14 +404,31 @@
 const API = '';
 let scriptEditor, templateEditor;
 let mongoConfigs = [], scripts = [], bots = [];
+const DB_TYPES = {
+  mongodb: 'MongoDB',
+  mysql: 'MySQL',
+  pgsql: 'PostgreSQL',
+};
+
+const DEFAULT_DB_SCRIPTS = {
+  mongodb: `# MongoDB 脚本：通过 db 变量访问数据库，将结果赋给 result
+collection = db['your_collection']
+result = list(collection.find({}, {'_id': 0}).limit(10))
+`,
+  mysql: `-- MySQL 脚本：直接填写 SQL，系统会自动转为 Python 执行
+SELECT NOW() AS current_time, DATABASE() AS current_database;
+`,
+  pgsql: `-- PostgreSQL 脚本：直接填写 SQL，系统会自动转为 Python 执行
+SELECT NOW() AS current_time, current_database() AS current_database;
+`,
+};
 
 // ── CodeMirror init ──────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   scriptEditor = CodeMirror.fromTextArea(document.getElementById('script-editor'), {
     mode: 'python', theme: 'dracula', lineNumbers: true, indentUnit: 4,
-    value: DEFAULT_SCRIPT
   });
-  scriptEditor.setValue(DEFAULT_SCRIPT);
+  scriptEditor.setValue(DEFAULT_DB_SCRIPTS.mongodb);
 
   templateEditor = CodeMirror.fromTextArea(document.getElementById('task-template-editor'), {
     mode: 'htmlmixed', theme: 'dracula', lineNumbers: true, indentUnit: 2,
@@ -402,11 +441,43 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('scriptModal').addEventListener('shown.bs.modal', () => scriptEditor.refresh());
   document.getElementById('taskModal').addEventListener('shown.bs.modal', () => templateEditor.refresh());
   document.getElementById('task-msg-type').addEventListener('change', updateTaskMsgTypeUI);
+  document.getElementById('mongo-db-type').addEventListener('change', updatePortPlaceholderByDbType);
+  document.getElementById('script-mongo-id').addEventListener('change', onScriptConfigChanged);
 });
 
 function updateTaskMsgTypeUI() {
   const isImage = document.getElementById('task-msg-type').value === 'image';
   document.getElementById('image-message-text-row').style.display = isImage ? '' : 'none';
+}
+
+function updatePortPlaceholderByDbType() {
+  const dbType = document.getElementById('mongo-db-type').value;
+  const portInput = document.getElementById('mongo-port');
+  if (!portInput.value || portInput.value === '27017' || portInput.value === '3306' || portInput.value === '5432') {
+    portInput.value = dbType === 'mysql' ? '3306' : (dbType === 'pgsql' ? '5432' : '27017');
+  }
+}
+
+function getConfigById(configId) {
+  return mongoConfigs.find(c => c.id === parseInt(configId));
+}
+
+function getScriptFormatFromConfig(configId) {
+  const cfg = getConfigById(configId);
+  return cfg?.db_type || 'mongodb';
+}
+
+function setScriptEditorModeByFormat(format) {
+  scriptEditor.setOption('mode', format === 'mongodb' ? 'python' : 'text/x-sql');
+}
+
+function onScriptConfigChanged() {
+  const configId = document.getElementById('script-mongo-id').value;
+  if (!configId) return;
+  const format = getScriptFormatFromConfig(configId);
+  const formatSelect = document.getElementById('script-format');
+  formatSelect.value = format;
+  setScriptEditorModeByFormat(format);
 }
 
 function openGithubModal() {
@@ -469,15 +540,6 @@ async function saveBaseUrl() {
     toast('服务器地址已保存', 'success');
   } catch (e) { toast(e.message, 'danger'); }
 }
-
-const DEFAULT_SCRIPT = `# 通过 db 变量操作 MongoDB，将结果赋给 result
-# 示例：
-collection = db['your_collection']
-pipeline = [
-    {"$group": {"_id": "$status", "count": {"$sum": 1}}}
-]
-result = list(collection.aggregate(pipeline))
-`;
 
 const DEFAULT_TEMPLATE = `<div class="report-container">
   <table>
@@ -555,10 +617,11 @@ function toast(msg, type = 'success') {
 // ── MongoDB Configs ──────────────────────────────────────────
 function renderMongoList() {
   const tbody = document.getElementById('mongo-list');
-  if (!mongoConfigs.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无配置</td></tr>'; return; }
+  if (!mongoConfigs.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无配置</td></tr>'; return; }
   tbody.innerHTML = mongoConfigs.map(c => `
     <tr>
       <td>${c.name}</td>
+      <td>${DB_TYPES[c.db_type] || c.db_type}</td>
       <td>${c.host}</td>
       <td>${c.port}</td>
       <td>${c.database}</td>
@@ -572,6 +635,7 @@ function renderMongoList() {
 function openMongoModal(id) {
   document.getElementById('mongo-id').value = '';
   ['name','host','database','username','password','auth-source','uri'].forEach(f => document.getElementById('mongo-' + f).value = '');
+  document.getElementById('mongo-db-type').value = 'mongodb';
   document.getElementById('mongo-host').value = 'localhost';
   document.getElementById('mongo-port').value = '27017';
   if (id) {
@@ -579,6 +643,7 @@ function openMongoModal(id) {
     if (!c) return;
     document.getElementById('mongo-id').value = c.id;
     document.getElementById('mongo-name').value = c.name;
+    document.getElementById('mongo-db-type').value = c.db_type || 'mongodb';
     document.getElementById('mongo-host').value = c.host;
     document.getElementById('mongo-port').value = c.port;
     document.getElementById('mongo-database').value = c.database;
@@ -587,14 +652,18 @@ function openMongoModal(id) {
     document.getElementById('mongo-auth-source').value = c.auth_source || '';
     document.getElementById('mongo-uri').value = c.uri || '';
   }
+  updatePortPlaceholderByDbType();
   new bootstrap.Modal(document.getElementById('mongoModal')).show();
 }
 
 function getMongoForm() {
+  const dbType = document.getElementById('mongo-db-type').value;
+  const defaultPort = dbType === 'mysql' ? 3306 : (dbType === 'pgsql' ? 5432 : 27017);
   return {
     name: document.getElementById('mongo-name').value.trim(),
+    db_type: dbType,
     host: document.getElementById('mongo-host').value.trim() || 'localhost',
-    port: parseInt(document.getElementById('mongo-port').value) || 27017,
+    port: parseInt(document.getElementById('mongo-port').value) || defaultPort,
     database: document.getElementById('mongo-database').value.trim(),
     username: document.getElementById('mongo-username').value.trim() || null,
     password: document.getElementById('mongo-password').value || null,
@@ -640,13 +709,14 @@ async function deleteMongo(id) {
 // ── Scripts ──────────────────────────────────────────────────
 function renderScriptList() {
   const tbody = document.getElementById('script-list');
-  if (!scripts.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无脚本</td></tr>'; return; }
+  if (!scripts.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无脚本</td></tr>'; return; }
   tbody.innerHTML = scripts.map(s => {
     const cfg = mongoConfigs.find(c => c.id === s.mongo_config_id);
     return `<tr>
       <td>${s.name}</td>
       <td>${s.description || '-'}</td>
       <td>${cfg ? cfg.name : s.mongo_config_id}</td>
+      <td>${DB_TYPES[s.script_format] || s.script_format || '-'}</td>
       <td class="action-btns">
         <button class="btn btn-sm btn-outline-primary" onclick="openScriptModal(${s.id})">编辑</button>
         <button class="btn btn-sm btn-outline-danger" onclick="deleteScript(${s.id})">删除</button>
@@ -656,7 +726,12 @@ function renderScriptList() {
 }
 
 function openScriptModal(id) {
+  if (!mongoConfigs.length) {
+    toast('请先创建数据库配置', 'warning');
+    return;
+  }
   const sel = document.getElementById('script-mongo-id');
+  const formatSel = document.getElementById('script-format');
   sel.innerHTML = mongoConfigs.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   document.getElementById('script-id').value = '';
   document.getElementById('script-name').value = '';
@@ -669,9 +744,18 @@ function openScriptModal(id) {
     document.getElementById('script-name').value = s.name;
     document.getElementById('script-description').value = s.description || '';
     sel.value = s.mongo_config_id;
+    formatSel.value = s.script_format || getScriptFormatFromConfig(s.mongo_config_id);
+    setScriptEditorModeByFormat(formatSel.value);
     setTimeout(() => scriptEditor.setValue(s.content), 50);
   } else {
-    setTimeout(() => scriptEditor.setValue(DEFAULT_SCRIPT), 50);
+    if (mongoConfigs.length) {
+      sel.value = String(mongoConfigs[0].id);
+      formatSel.value = getScriptFormatFromConfig(mongoConfigs[0].id);
+    } else {
+      formatSel.value = 'mongodb';
+    }
+    setScriptEditorModeByFormat(formatSel.value);
+    setTimeout(() => scriptEditor.setValue(DEFAULT_DB_SCRIPTS[formatSel.value] || DEFAULT_DB_SCRIPTS.mongodb), 50);
   }
   new bootstrap.Modal(document.getElementById('scriptModal')).show();
 }
@@ -681,6 +765,7 @@ async function saveScript() {
     name: document.getElementById('script-name').value.trim(),
     description: document.getElementById('script-description').value.trim() || null,
     mongo_config_id: parseInt(document.getElementById('script-mongo-id').value),
+    script_format: document.getElementById('script-format').value,
     content: scriptEditor.getValue(),
   };
   if (!data.name || !data.mongo_config_id) { toast('请填写必填字段', 'warning'); return; }
@@ -705,10 +790,13 @@ async function testScript() {
       let out = '// 查询结果\n' + JSON.stringify(r.result, null, 2);
       if (r.debug) {
         out += '\n\n// 调试信息\n'
+          + `// 数据库类型: ${r.debug.db_type}\n`
           + `// 数据库: ${r.debug.database}\n`
           + `// 连接URI: ${r.debug.uri}\n`
-          + `// 当前库集合: ${(r.debug.collections || []).join(', ') || '(空)'}\n`
-          + `// 结果类型: ${r.debug.result_type}, 数量: ${r.debug.result_count ?? '-'}`;
+          + `${r.debug.collections ? `// 当前库集合: ${(r.debug.collections || []).join(', ') || '(空)'}\n` : ''}`
+          + `// 结果类型: ${r.debug.result_type}, 数量: ${r.debug.result_count ?? '-'}\n`
+          + '// 自动生成Python脚本:\n'
+          + (r.debug.generated_python || '(无)');
       }
       document.getElementById('script-result').textContent = out;
     } else {
@@ -865,6 +953,7 @@ function renderTaskList(tasks) {
       <td>${script ? script.name : t.script_id}</td>
       <td>${bot ? bot.name : t.bot_id}</td>
       <td>${{image:'图片播报',markdown:'Markdown',text:'纯文本'}[t.msg_type] || t.msg_type}</td>
+      <td>${t.at_all ? '<span class="badge bg-warning text-dark">是</span>' : '<span class="text-muted">—</span>'}</td>
       <td>${cronBadge}${t.cron_expression && t.enabled ? '<br><small class="text-muted next-run-time" data-task-id="' + t.id + '"></small>' : ''}</td>
       <td>${statusBadge}</td>
       <td>${lastRun}${t.last_run_result ? '<br><small class="text-muted">' + t.last_run_result + '</small>' : ''}</td>
@@ -888,6 +977,7 @@ async function openTaskModal(id) {
   document.getElementById('task-name').value = '';
   document.getElementById('task-msg-type').value = 'markdown';
   document.getElementById('task-enabled').value = 'true';
+  document.getElementById('task-at-all').checked = false;
   document.getElementById('task-cron').value = '';
   document.getElementById('task-image-message-text').value = '';
   updateCronDesc();
@@ -900,6 +990,7 @@ async function openTaskModal(id) {
       botSel.value = t.bot_id;
       document.getElementById('task-msg-type').value = t.msg_type;
       document.getElementById('task-enabled').value = String(t.enabled);
+      document.getElementById('task-at-all').checked = !!t.at_all;
       document.getElementById('task-cron').value = t.cron_expression || '';
       document.getElementById('task-image-message-text').value = t.image_message_text || '';
       updateCronDesc();
@@ -1008,6 +1099,7 @@ async function saveTask() {
     msg_type: document.getElementById('task-msg-type').value,
     cron_expression: cronVal || null,
     enabled: document.getElementById('task-enabled').value === 'true',
+    at_all: document.getElementById('task-at-all').checked,
   };
   if (!data.name || !data.script_id || !data.bot_id) { toast('请填写必填字段', 'warning'); return; }
   try {

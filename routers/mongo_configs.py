@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from database import get_db
 from models import MongoConfig
 from schemas import MongoConfigCreate, MongoConfigUpdate, MongoConfigOut, MongoConfigBase
@@ -22,7 +24,9 @@ def get_config(config_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=MongoConfigOut)
 def create_config(data: MongoConfigCreate, db: Session = Depends(get_db)):
-    cfg = MongoConfig(**data.model_dump())
+    payload = data.model_dump()
+    payload["db_type"] = (payload.get("db_type") or "mongodb").lower()
+    cfg = MongoConfig(**payload)
     db.add(cfg)
     db.commit()
     db.refresh(cfg)
@@ -34,7 +38,9 @@ def update_config(config_id: int, data: MongoConfigUpdate, db: Session = Depends
     cfg = db.query(MongoConfig).filter(MongoConfig.id == config_id).first()
     if not cfg:
         raise HTTPException(status_code=404, detail="Config not found")
-    for k, v in data.model_dump().items():
+    payload = data.model_dump()
+    payload["db_type"] = (payload.get("db_type") or "mongodb").lower()
+    for k, v in payload.items():
         setattr(cfg, k, v)
     db.commit()
     db.refresh(cfg)
@@ -55,11 +61,7 @@ def delete_config(config_id: int, db: Session = Depends(get_db)):
 def test_connection(data: MongoConfigBase):
     """Test connection using form values directly (no save required)."""
     try:
-        from pymongo import MongoClient
-        uri = _build_uri_from_data(data)
-        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
-        client.server_info()
-        client.close()
+        _test_connection(data.db_type, _build_uri_from_data(data))
         return {"ok": True, "message": "连接成功"}
     except Exception as e:
         return {"ok": False, "message": _friendly_error(e)}
@@ -71,11 +73,7 @@ def test_config(config_id: int, db: Session = Depends(get_db)):
     if not cfg:
         raise HTTPException(status_code=404, detail="Config not found")
     try:
-        from pymongo import MongoClient
-        uri = _build_uri(cfg)
-        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
-        client.server_info()
-        client.close()
+        _test_connection(cfg.db_type, _build_uri(cfg))
         return {"ok": True, "message": "连接成功"}
     except Exception as e:
         return {"ok": False, "message": _friendly_error(e)}
@@ -84,6 +82,28 @@ def test_config(config_id: int, db: Session = Depends(get_db)):
 def _build_uri(cfg: MongoConfig) -> str:
     if cfg.uri:
         return cfg.uri
+    if cfg.db_type == "mysql":
+        return str(
+            URL.create(
+                "mysql+pymysql",
+                username=cfg.username or None,
+                password=cfg.password or None,
+                host=cfg.host,
+                port=cfg.port or 3306,
+                database=cfg.database,
+            )
+        )
+    if cfg.db_type == "pgsql":
+        return str(
+            URL.create(
+                "postgresql+psycopg2",
+                username=cfg.username or None,
+                password=cfg.password or None,
+                host=cfg.host,
+                port=cfg.port or 5432,
+                database=cfg.database,
+            )
+        )
     if cfg.username and cfg.password:
         from urllib.parse import quote_plus
         auth = f"{quote_plus(cfg.username)}:{quote_plus(cfg.password)}@"
@@ -118,6 +138,28 @@ def _friendly_error(e: Exception) -> str:
 def _build_uri_from_data(data: MongoConfigBase) -> str:
     if data.uri:
         return data.uri
+    if data.db_type == "mysql":
+        return str(
+            URL.create(
+                "mysql+pymysql",
+                username=data.username or None,
+                password=data.password or None,
+                host=data.host,
+                port=data.port or 3306,
+                database=data.database,
+            )
+        )
+    if data.db_type == "pgsql":
+        return str(
+            URL.create(
+                "postgresql+psycopg2",
+                username=data.username or None,
+                password=data.password or None,
+                host=data.host,
+                port=data.port or 5432,
+                database=data.database,
+            )
+        )
     if data.username and data.password:
         from urllib.parse import quote_plus
         auth = f"{quote_plus(data.username)}:{quote_plus(data.password)}@"
@@ -129,3 +171,19 @@ def _build_uri_from_data(data: MongoConfigBase) -> str:
     if auth_source:
         uri += f"?authSource={auth_source}"
     return uri
+
+
+def _test_connection(db_type: str, uri: str) -> None:
+    if (db_type or "mongodb").lower() == "mongodb":
+        from pymongo import MongoClient
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        client.server_info()
+        client.close()
+        return
+
+    engine = create_engine(uri, future=True)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    finally:
+        engine.dispose()

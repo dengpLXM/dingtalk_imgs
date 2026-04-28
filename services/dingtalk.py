@@ -46,6 +46,7 @@ def send_message(
     content: str,
     title: str = "统计报告",
     image_intro_text: Optional[str] = None,
+    at_all: bool = False,
 ) -> dict:
     url = bot.webhook_url
     if bot.secret:
@@ -73,6 +74,9 @@ def send_message(
             "msgtype": "text",
             "text": {"content": content},
         }
+
+    if at_all:
+        payload["at"] = {"isAtAll": True}
 
     resp = requests.post(url, json=payload, timeout=10)
     resp.raise_for_status()
