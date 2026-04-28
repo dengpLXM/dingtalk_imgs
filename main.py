@@ -24,11 +24,22 @@ Path("static/reports").mkdir(parents=True, exist_ok=True)
 with engine.connect() as conn:
     from sqlalchemy import text, inspect as sa_inspect
     cols = [c["name"] for c in sa_inspect(engine).get_columns("tasks")]
+    script_cols = [c["name"] for c in sa_inspect(engine).get_columns("scripts")]
+    mongo_cols = [c["name"] for c in sa_inspect(engine).get_columns("mongo_configs")]
     if "cron_expression" not in cols:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN cron_expression VARCHAR(100)"))
         conn.commit()
     if "image_message_text" not in cols:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN image_message_text TEXT"))
+        conn.commit()
+    if "at_all" not in cols:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN at_all BOOLEAN NOT NULL DEFAULT 0"))
+        conn.commit()
+    if "script_format" not in script_cols:
+        conn.execute(text("ALTER TABLE scripts ADD COLUMN script_format VARCHAR(20) NOT NULL DEFAULT 'mongodb'"))
+        conn.commit()
+    if "db_type" not in mongo_cols:
+        conn.execute(text("ALTER TABLE mongo_configs ADD COLUMN db_type VARCHAR(20) NOT NULL DEFAULT 'mongodb'"))
         conn.commit()
 
 
