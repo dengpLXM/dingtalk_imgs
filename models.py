@@ -60,6 +60,8 @@ class Task(Base):
     script_id: Mapped[int] = mapped_column(Integer, ForeignKey("scripts.id"), nullable=False)
     bot_id: Mapped[int] = mapped_column(Integer, ForeignKey("dingtalk_bots.id"), nullable=False)
     message_template: Mapped[str] = mapped_column(Text, nullable=False)
+    # 图片播报时：与图片一并推送的钉钉 markdown 文本（不写入截图）
+    image_message_text: Mapped[Optional[str]] = mapped_column(Text)
     msg_type: Mapped[str] = mapped_column(String(20), default="markdown")
     cron_expression: Mapped[Optional[str]] = mapped_column(String(100))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

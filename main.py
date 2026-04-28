@@ -27,6 +27,9 @@ with engine.connect() as conn:
     if "cron_expression" not in cols:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN cron_expression VARCHAR(100)"))
         conn.commit()
+    if "image_message_text" not in cols:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN image_message_text TEXT"))
+        conn.commit()
 
 
 @asynccontextmanager

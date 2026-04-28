@@ -1,8 +1,11 @@
+import re
 import time
 import hmac
 import hashlib
 import base64
 import urllib.parse
+from typing import Optional
+
 import requests
 from models import DingTalkBot
 
@@ -20,16 +23,45 @@ def _sign_url(webhook_url: str, secret: str) -> str:
     return f"{webhook_url}{connector}timestamp={timestamp}&sign={sign}"
 
 
-def send_message(bot: DingTalkBot, msg_type: str, content: str, title: str = "统计报告") -> dict:
+def format_dingtalk_markdown_text(text: str) -> str:
+    """DingTalk markdown collapses plain single newlines; use trailing two spaces (GFM hard line break).
+
+    See: https://open.dingtalk.com/document/robots/ — line breaks:建议 \\n 前后加空格
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return text
+    # Paragraphs separated by blank line stay as \n\n; within each paragraph, "  \n" = hard break
+    parts = re.split(r"\n{2,}", text)
+    out = []
+    for p in parts:
+        lines = [line.rstrip() for line in p.split("\n")]
+        out.append("  \n".join(lines))
+    return "\n\n".join(out)
+
+
+def send_message(
+    bot: DingTalkBot,
+    msg_type: str,
+    content: str,
+    title: str = "统计报告",
+    image_intro_text: Optional[str] = None,
+) -> dict:
     url = bot.webhook_url
     if bot.secret:
         url = _sign_url(url, bot.secret)
 
     if msg_type == "image":
-        # content is a public image URL — use markdown to embed image
+        # content is a public image URL — use markdown: optional intro, then image
+        intro = (image_intro_text or "").strip()
+        if intro:
+            intro = format_dingtalk_markdown_text(intro)
+            text = f"{intro}\n\n![report]({content})"
+        else:
+            text = f"![report]({content})"
         payload = {
             "msgtype": "markdown",
-            "markdown": {"title": title, "text": f"![report]({content})"},
+            "markdown": {"title": title, "text": text},
         }
     elif msg_type == "markdown":
         payload = {

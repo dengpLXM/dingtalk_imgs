@@ -1,10 +1,76 @@
 """Render HTML to image using Playwright headless browser."""
-import os
-import io
-import hashlib
 import base64
+import hashlib
+import os
+import sys
+from pathlib import Path
 
 _browser = None
+
+
+def _headless_shell_folder_priority() -> list[str]:
+    """Subdir names under chromium_headless_shell-* — prefer OS/arch matching Python process."""
+    import platform
+
+    machine = platform.machine().lower()
+    if sys.platform == "darwin":
+        if machine == "arm64":
+            return [
+                "chrome-headless-shell-mac-arm64",
+                "chrome-headless-shell-mac-x64",
+            ]
+        return [
+            "chrome-headless-shell-mac-x64",
+            "chrome-headless-shell-mac-arm64",
+        ]
+    if sys.platform.startswith("linux"):
+        if machine in ("aarch64", "arm64"):
+            return [
+                "chrome-headless-shell-linux-arm64",
+                "chrome-headless-shell-linux64",
+            ]
+        return [
+            "chrome-headless-shell-linux64",
+            "chrome-headless-shell-linux-arm64",
+        ]
+    if sys.platform == "win32":
+        return ["chrome-headless-shell-win64", "chrome-headless-shell-win32"]
+    return []
+
+
+def _headless_shell_binary_name() -> str:
+    return "chrome-headless-shell.exe" if sys.platform == "win32" else "chrome-headless-shell"
+
+
+def find_installed_headless_shell_executable() -> str | None:
+    """Locate bundled headless shell binary; avoids Playwright picking wrong CPU arch on Apple Silicon/Rosetta mixes."""
+    explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "").strip()
+    if explicit and os.path.isfile(explicit):
+        return explicit
+
+    base = (os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if not base:
+        if sys.platform == "darwin":
+            base = str(Path.home() / "Library/Caches/ms-playwright")
+        else:
+            base = str(Path.home() / ".cache" / "ms-playwright")
+    root = Path(base)
+    if not root.is_dir():
+        return None
+
+    shells = sorted(root.glob("chromium_headless_shell-*"), key=lambda p: p.name, reverse=True)
+    bin_name = _headless_shell_binary_name()
+    for folder_name in _headless_shell_folder_priority():
+        for shell_root in shells:
+            candidate = shell_root / folder_name / bin_name
+            if candidate.is_file():
+                return str(candidate)
+    for shell_root in shells:
+        for sub in sorted(shell_root.glob("chrome-headless-shell-*")):
+            candidate = sub / bin_name
+            if candidate.is_file():
+                return str(candidate)
+    return None
 
 
 def _ensure_browsers_path():
@@ -26,8 +92,13 @@ async def _get_browser():
     if _browser is None:
         _ensure_browsers_path()
         from playwright.async_api import async_playwright
+
         pw = await async_playwright().start()
-        _browser = await pw.chromium.launch(headless=True)
+        exe = find_installed_headless_shell_executable()
+        opts: dict = {"headless": True}
+        if exe:
+            opts["executable_path"] = exe
+        _browser = await pw.chromium.launch(**opts)
     return _browser
 
 

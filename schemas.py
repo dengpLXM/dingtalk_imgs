@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MongoConfigBase(BaseModel):
@@ -81,6 +81,10 @@ class TaskBase(BaseModel):
     script_id: int
     bot_id: int
     message_template: str
+    image_message_text: Optional[str] = Field(
+        default=None,
+        description="图片播报时与图片一并推送的文案（多行，支持 markdown；不写入截图）",
+    )
     msg_type: str = "markdown"
     cron_expression: Optional[str] = None
     enabled: bool = True

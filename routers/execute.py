@@ -120,7 +120,12 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
                 log_entry.stage = "upload"
                 img_url = upload_image(img_bytes, task.id)
                 log_entry.stage = "send"
-                send_message(task.bot, "image", img_url)
+                send_message(
+                    task.bot,
+                    "image",
+                    img_url,
+                    image_intro_text=task.image_message_text,
+                )
             else:
                 log_entry.stage = "template"
                 message = render_template(task.message_template, result)
