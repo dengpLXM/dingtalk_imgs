@@ -7,10 +7,15 @@ cd "$APP_DIR"
 echo "[1/5] Pull latest code"
 max_retries=3
 retry_delay=5
+pull_timeout=45
 attempt=1
 while true; do
   echo "  -> git pull attempt ${attempt}/${max_retries}"
-  if git pull --ff-only origin main; then
+  if command -v timeout >/dev/null 2>&1; then
+    if timeout "${pull_timeout}" git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --ff-only origin main; then
+      break
+    fi
+  elif git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --ff-only origin main; then
     break
   fi
   if [ "$attempt" -ge "$max_retries" ]; then
