@@ -134,7 +134,7 @@
 <div class="modal fade" id="scriptModal" tabindex="-1">
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">查询脚本</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="script-modal-title">查询脚本</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="hidden" id="script-id">
         <div class="row g-3 mb-3">
@@ -707,6 +707,19 @@ async function deleteMongo(id) {
 }
 
 // ── Scripts ──────────────────────────────────────────────────
+function makeUniqueScriptCopyName(originalName) {
+  const base = `${originalName} - 副本`;
+  const names = new Set(scripts.map(s => s.name));
+  if (!names.has(base)) return base;
+  let i = 2;
+  let candidate;
+  do {
+    candidate = `${originalName} - 副本 (${i})`;
+    i++;
+  } while (names.has(candidate));
+  return candidate;
+}
+
 function renderScriptList() {
   const tbody = document.getElementById('script-list');
   if (!scripts.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无脚本</td></tr>'; return; }
@@ -719,13 +732,14 @@ function renderScriptList() {
       <td>${DB_TYPES[s.script_format] || s.script_format || '-'}</td>
       <td class="action-btns">
         <button class="btn btn-sm btn-outline-primary" onclick="openScriptModal(${s.id})">编辑</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="openScriptModal(${s.id}, true)">复制</button>
         <button class="btn btn-sm btn-outline-danger" onclick="deleteScript(${s.id})">删除</button>
       </td>
     </tr>`;
   }).join('');
 }
 
-function openScriptModal(id) {
+function openScriptModal(id, asCopy) {
   if (!mongoConfigs.length) {
     toast('请先创建数据库配置', 'warning');
     return;
@@ -733,6 +747,7 @@ function openScriptModal(id) {
   const sel = document.getElementById('script-mongo-id');
   const formatSel = document.getElementById('script-format');
   sel.innerHTML = mongoConfigs.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('script-modal-title').textContent = asCopy ? '复制脚本' : '查询脚本';
   document.getElementById('script-id').value = '';
   document.getElementById('script-name').value = '';
   document.getElementById('script-description').value = '';
@@ -740,8 +755,12 @@ function openScriptModal(id) {
   if (id) {
     const s = scripts.find(x => x.id === id);
     if (!s) return;
-    document.getElementById('script-id').value = s.id;
-    document.getElementById('script-name').value = s.name;
+    if (asCopy) {
+      document.getElementById('script-name').value = makeUniqueScriptCopyName(s.name);
+    } else {
+      document.getElementById('script-id').value = s.id;
+      document.getElementById('script-name').value = s.name;
+    }
     document.getElementById('script-description').value = s.description || '';
     sel.value = s.mongo_config_id;
     formatSel.value = s.script_format || getScriptFormatFromConfig(s.mongo_config_id);
