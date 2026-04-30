@@ -5,6 +5,7 @@ import random
 import hashlib
 import base64
 from datetime import datetime
+from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 900, 660
@@ -82,7 +83,7 @@ def _text_h(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) 
 
 def _draw_centered(draw: ImageDraw.ImageDraw, text: str, y: int,
                    font: ImageFont.FreeTypeFont, color: tuple,
-                   shadow_color: tuple | None = None) -> int:
+                   shadow_color: Optional[tuple] = None) -> int:
     tw = _text_w(draw, text, font)
     tx = (W - tw) // 2
     if shadow_color:
