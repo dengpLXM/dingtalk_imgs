@@ -1,4 +1,5 @@
 """Render HTML to image using Playwright headless browser."""
+import asyncio
 import base64
 import hashlib
 import os
@@ -6,6 +7,8 @@ import sys
 from pathlib import Path
 
 _browser = None
+_playwright = None
+_browser_lock = asyncio.Lock()
 
 
 def _headless_shell_folder_priority() -> list[str]:
@@ -87,18 +90,42 @@ def _ensure_browsers_path():
             return
 
 
+async def _close_browser_unlocked() -> None:
+    """Close browser and stop Playwright driver. Caller must hold _browser_lock."""
+    global _browser, _playwright
+    if _browser is not None:
+        try:
+            await _browser.close()
+        except Exception:
+            pass
+        _browser = None
+    if _playwright is not None:
+        try:
+            await _playwright.stop()
+        except Exception:
+            pass
+        _playwright = None
+
+
 async def _get_browser():
-    global _browser
-    if _browser is None:
+    """Singleton browser; keeps Playwright alive (dropping the driver closes the browser)."""
+    global _browser, _playwright
+    if _browser is not None and _browser.is_connected:
+        return _browser
+
+    async with _browser_lock:
+        if _browser is not None and _browser.is_connected:
+            return _browser
+        await _close_browser_unlocked()
         _ensure_browsers_path()
         from playwright.async_api import async_playwright
 
-        pw = await async_playwright().start()
+        _playwright = await async_playwright().start()
         exe = find_installed_headless_shell_executable()
         opts: dict = {"headless": True}
         if exe:
             opts["executable_path"] = exe
-        _browser = await pw.chromium.launch(**opts)
+        _browser = await _playwright.chromium.launch(**opts)
     return _browser
 
 
@@ -116,7 +143,5 @@ async def render_html_to_image(html_content: str, width: int = 900) -> tuple[byt
 
 
 async def shutdown():
-    global _browser
-    if _browser:
-        await _browser.close()
-        _browser = None
+    async with _browser_lock:
+        await _close_browser_unlocked()

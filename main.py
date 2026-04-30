@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from database import engine, Base
 from routers import mongo_configs, scripts, dingtalk_bots, tasks, execute, task_logs
 from services import scheduler as sched_service
+from services import html_renderer as html_renderer_service
 
 Base.metadata.create_all(bind=engine)
 Path("static/reports").mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,7 @@ async def lifespan(application: FastAPI):
     sched_service.start()
     yield
     sched_service.shutdown()
+    await html_renderer_service.shutdown()
 
 
 app = FastAPI(title="DingTalk Stats Reporter", version="1.0.0", lifespan=lifespan)
