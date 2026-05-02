@@ -39,7 +39,7 @@ async def _execute_task(task_id: int) -> None:
         render_html_template,
         run_script_isolated,
     )
-    from services.dingtalk import send_message_by_bot_id, send_report_image_by_bot_id
+    from services.dingtalk import send_message_by_bot_id
     from services.html_renderer import render_html_to_image
     from services.image_host import upload_image
     from routers.task_logs import log_execution
@@ -79,12 +79,12 @@ async def _execute_task(task_id: int) -> None:
                     log_entry.stage = "send"
                     await asyncio.to_thread(
                         functools.partial(
-                            send_report_image_by_bot_id,
+                            send_message_by_bot_id,
                             bot_id,
-                            img_bytes,
+                            "image",
+                            img_url,
                             image_intro_text=task.image_message_text,
                             at_all=task.at_all,
-                            image_url_fallback=img_url,
                         )
                     )
                 else:
