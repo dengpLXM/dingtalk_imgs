@@ -12,7 +12,13 @@ from models import Task
 
 log = logging.getLogger("scheduler")
 
-scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+# Default APScheduler misfire_grace_time is 1s. Many tasks share the same cron
+# minute; later jobs can be evaluated >1s after the tick and are skipped with no
+# log. Use a generous grace window so queued same-minute jobs still run.
+scheduler = AsyncIOScheduler(
+    timezone="Asia/Shanghai",
+    job_defaults={"misfire_grace_time": 300},
+)
 
 _JOB_PREFIX = "task_"
 
