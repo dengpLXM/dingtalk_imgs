@@ -58,7 +58,7 @@ echo "[3/5] Install Python dependencies"
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
-echo "[4/5] Ensure Playwright Chromium is installed"
+echo "[4/5] Ensure Playwright Chromium is installed (full browser, not --only-shell — needed for correct screenshots)"
 .venv/bin/playwright install chromium
 
 echo "[5/5] Restart service"

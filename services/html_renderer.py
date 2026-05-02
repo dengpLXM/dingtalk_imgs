@@ -2,9 +2,12 @@
 import asyncio
 import base64
 import hashlib
+import logging
 import os
 import sys
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 _browser = None
 _playwright = None
@@ -12,6 +15,77 @@ _browser_lock = asyncio.Lock()
 # Serialize screenshots: concurrent new_page/screenshot on the singleton browser
 # produces blank JPEGs or "browser has been closed" when many cron tasks fire together.
 _render_lock = asyncio.Lock()
+
+
+def _playwright_cache_root() -> Path | None:
+    base = (os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if not base:
+        if sys.platform == "darwin":
+            base = str(Path.home() / "Library/Caches/ms-playwright")
+        else:
+            base = str(Path.home() / ".cache" / "ms-playwright")
+    root = Path(base)
+    return root if root.is_dir() else None
+
+
+def _full_chromium_folder_priority() -> list[str]:
+    """Subdirs under chromium-* (full browser), OS/arch ordered."""
+    import platform
+
+    machine = platform.machine().lower()
+    if sys.platform == "darwin":
+        if machine == "arm64":
+            return ["chrome-mac-arm64", "chrome-mac-x64", "chrome-mac"]
+        return ["chrome-mac-x64", "chrome-mac-arm64", "chrome-mac"]
+    if sys.platform.startswith("linux"):
+        if machine in ("aarch64", "arm64"):
+            return ["chrome-linux-arm64", "chrome-linux64", "chrome-linux"]
+        return ["chrome-linux64", "chrome-linux-arm64", "chrome-linux"]
+    if sys.platform == "win32":
+        return ["chrome-win64", "chrome-win32"]
+    return []
+
+
+def find_full_chromium_executable() -> str | None:
+    """Full Chromium renders templates reliably; headless-shell often yields blank JPEGs for CSS/gradient/canvas."""
+    if os.environ.get("PLAYWRIGHT_USE_HEADLESS_SHELL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return None
+    root = _playwright_cache_root()
+    if root is None:
+        return None
+    builds = sorted(
+        (
+            p
+            for p in root.iterdir()
+            if p.is_dir()
+            and p.name.startswith("chromium-")
+            and "headless_shell" not in p.name
+        ),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    for build in builds:
+        for folder in _full_chromium_folder_priority():
+            if folder.startswith("chrome-mac"):
+                mac = (
+                    build
+                    / folder
+                    / "Chromium.app"
+                    / "Contents"
+                    / "MacOS"
+                    / "Chromium"
+                )
+                if mac.is_file():
+                    return str(mac)
+            exe_name = "chrome.exe" if sys.platform == "win32" else "chrome"
+            cand = build / folder / exe_name
+            if cand.is_file():
+                return str(cand)
+    return None
 
 
 def _headless_shell_folder_priority() -> list[str]:
@@ -49,19 +123,9 @@ def _headless_shell_binary_name() -> str:
 
 
 def find_installed_headless_shell_executable() -> str | None:
-    """Locate bundled headless shell binary; avoids Playwright picking wrong CPU arch on Apple Silicon/Rosetta mixes."""
-    explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "").strip()
-    if explicit and os.path.isfile(explicit):
-        return explicit
-
-    base = (os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
-    if not base:
-        if sys.platform == "darwin":
-            base = str(Path.home() / "Library/Caches/ms-playwright")
-        else:
-            base = str(Path.home() / ".cache" / "ms-playwright")
-    root = Path(base)
-    if not root.is_dir():
+    """Locate headless-shell fallback when full Chromium is not installed."""
+    root = _playwright_cache_root()
+    if root is None:
         return None
 
     shells = sorted(root.glob("chromium_headless_shell-*"), key=lambda p: p.name, reverse=True)
@@ -124,10 +188,27 @@ async def _get_browser():
         from playwright.async_api import async_playwright
 
         _playwright = await async_playwright().start()
-        exe = find_installed_headless_shell_executable()
+        explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "").strip()
+        if explicit and os.path.isfile(explicit):
+            exe, exe_kind = explicit, "explicit"
+        else:
+            full = find_full_chromium_executable()
+            if full:
+                exe, exe_kind = full, "full"
+            else:
+                shell = find_installed_headless_shell_executable()
+                exe, exe_kind = (shell, "headless-shell") if shell else (None, "none")
         opts: dict = {"headless": True}
         if exe:
             opts["executable_path"] = exe
+            _log.info("Playwright Chromium [%s]: %s", exe_kind, exe)
+        else:
+            _log.warning(
+                "No Chromium executable found under PLAYWRIGHT cache; launch may fail. "
+                "Run: playwright install chromium (without --only-shell)."
+            )
+        if sys.platform.startswith("linux"):
+            opts["args"] = ["--disable-dev-shm-usage"]
         _browser = await _playwright.chromium.launch(**opts)
     return _browser
 
@@ -138,17 +219,34 @@ async def render_html_to_image(html_content: str, width: int = 900) -> tuple[byt
         browser = await _get_browser()
         page = await browser.new_page(viewport={"width": width, "height": 1200})
         try:
-            await page.set_content(html_content, wait_until="networkidle")
+            await page.emulate_media(media="screen")
+            await page.set_content(html_content, wait_until="load", timeout=90_000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=25_000)
+            except Exception:
+                pass
             try:
                 await page.evaluate("document.fonts.ready")
             except Exception:
                 pass
-            # Wait two frames so layout/paint completes before capture (reduces blank screenshots).
             await page.evaluate(
                 """() => new Promise((resolve) => {
                   requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
                 })"""
             )
+            delay_ms = int(os.getenv("PLAYWRIGHT_RENDER_DELAY_MS", "800"))
+            if delay_ms > 0:
+                await asyncio.sleep(delay_ms / 1000)
+            try:
+                await page.evaluate(
+                    """() => {
+                      window.scrollTo(0, document.body.scrollHeight);
+                      window.scrollTo(0, 0);
+                    }"""
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
             png_bytes = await page.screenshot(full_page=True, type="jpeg", quality=92)
         finally:
             await page.close()

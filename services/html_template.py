@@ -173,10 +173,13 @@ def wrap_html(body_html: str) -> str:
     body = body_html.replace("{{REPORT_DATE}}", date_str)
 
     return f"""<!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=900, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
+html {{ color-scheme: dark; }}
 {DEFAULT_STYLES}
 </style>
 </head>
