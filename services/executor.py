@@ -158,6 +158,22 @@ def run_script(
     raise ValueError(f"不支持的脚本格式: {script_format}")
 
 
+def run_script_isolated(
+    script_content: str, mongo_config_id: int, script_format: str
+) -> tuple[object, dict]:
+    """独立 Session 拉取 MongoConfig 后执行脚本；供 asyncio.to_thread 使用，避免跨线程持有 ORM 实例。"""
+    from database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        cfg = db.get(MongoConfig, mongo_config_id)
+        if cfg is None:
+            raise ValueError(f"数据连接不存在: id={mongo_config_id}")
+        return run_script(script_content, cfg, script_format)
+    finally:
+        db.close()
+
+
 def format_result(result: object) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2, cls=_JSONEncoder)
 

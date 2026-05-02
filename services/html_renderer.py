@@ -9,6 +9,9 @@ from pathlib import Path
 _browser = None
 _playwright = None
 _browser_lock = asyncio.Lock()
+# Serialize screenshots: concurrent new_page/screenshot on the singleton browser
+# produces blank JPEGs or "browser has been closed" when many cron tasks fire together.
+_render_lock = asyncio.Lock()
 
 
 def _headless_shell_folder_priority() -> list[str]:
@@ -131,11 +134,24 @@ async def _get_browser():
 
 async def render_html_to_image(html_content: str, width: int = 900) -> tuple[bytes, str, str]:
     """Render HTML to JPEG image. Returns (jpeg_bytes, base64_str, md5_hex)."""
-    browser = await _get_browser()
-    page = await browser.new_page(viewport={"width": width, "height": 100})
-    await page.set_content(html_content, wait_until="networkidle")
-    png_bytes = await page.screenshot(full_page=True, type="jpeg", quality=92)
-    await page.close()
+    async with _render_lock:
+        browser = await _get_browser()
+        page = await browser.new_page(viewport={"width": width, "height": 1200})
+        try:
+            await page.set_content(html_content, wait_until="networkidle")
+            try:
+                await page.evaluate("document.fonts.ready")
+            except Exception:
+                pass
+            # Wait two frames so layout/paint completes before capture (reduces blank screenshots).
+            await page.evaluate(
+                """() => new Promise((resolve) => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+                })"""
+            )
+            png_bytes = await page.screenshot(full_page=True, type="jpeg", quality=92)
+        finally:
+            await page.close()
 
     img_b64 = base64.b64encode(png_bytes).decode()
     img_md5 = hashlib.md5(png_bytes).hexdigest()

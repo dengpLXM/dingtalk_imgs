@@ -84,3 +84,32 @@ def send_message(
     if result.get("errcode", 0) != 0:
         raise RuntimeError(f"钉钉返回错误: {result.get('errmsg', result)}")
     return result
+
+
+def send_message_by_bot_id(
+    bot_id: int,
+    msg_type: str,
+    content: str,
+    *,
+    title: str = "统计报告",
+    image_intro_text: Optional[str] = None,
+    at_all: bool = False,
+) -> dict:
+    """独立 Session 加载机器人后发送；供 asyncio.to_thread，避免跨线程使用 ORM。"""
+    from database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        bot = db.get(DingTalkBot, bot_id)
+        if bot is None:
+            raise ValueError("钉钉机器人不存在")
+        return send_message(
+            bot,
+            msg_type,
+            content,
+            title=title,
+            image_intro_text=image_intro_text,
+            at_all=at_all,
+        )
+    finally:
+        db.close()

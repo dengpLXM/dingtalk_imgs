@@ -48,7 +48,7 @@ with engine.connect() as conn:
 async def lifespan(application: FastAPI):
     sched_service.start()
     yield
-    sched_service.shutdown()
+    sched_service.shutdown(wait=True)
     await html_renderer_service.shutdown()
 
 

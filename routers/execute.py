@@ -1,3 +1,5 @@
+import asyncio
+import functools
 import os
 import json
 from datetime import datetime
@@ -7,8 +9,14 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Script, Task, DingTalkBot, MongoConfig
 from schemas import ExecuteResult
-from services.executor import run_script, render_template, render_html_template, format_result
-from services.dingtalk import send_message
+from services.executor import (
+    run_script,
+    run_script_isolated,
+    render_template,
+    render_html_template,
+    format_result,
+)
+from services.dingtalk import send_message_by_bot_id
 from services.html_renderer import render_html_to_image
 from services.image_host import upload_image
 
@@ -57,9 +65,10 @@ async def preview_task(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
 
     try:
-        result, debug = run_script(
+        result, debug = await asyncio.to_thread(
+            run_script_isolated,
             task.script.content,
-            task.script.mongo_config,
+            task.script.mongo_config_id,
             task.script.script_format,
         )
     except Exception as e:
@@ -118,9 +127,10 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
     with log_execution(task.id, "manual", db) as log_entry:
         try:
             log_entry.stage = "script"
-            result, _ = run_script(
+            result, _ = await asyncio.to_thread(
+                run_script_isolated,
                 task.script.content,
-                task.script.mongo_config,
+                task.script.mongo_config_id,
                 task.script.script_format,
             )
 
@@ -130,20 +140,33 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
                 log_entry.stage = "image_render"
                 img_bytes, _, _ = await render_html_to_image(html)
                 log_entry.stage = "upload"
-                img_url = upload_image(img_bytes, task.id)
+                img_url = await asyncio.to_thread(
+                    upload_image, img_bytes, task.id
+                )
                 log_entry.stage = "send"
-                send_message(
-                    task.bot,
-                    "image",
-                    img_url,
-                    image_intro_text=task.image_message_text,
-                    at_all=task.at_all,
+                await asyncio.to_thread(
+                    functools.partial(
+                        send_message_by_bot_id,
+                        task.bot_id,
+                        "image",
+                        img_url,
+                        image_intro_text=task.image_message_text,
+                        at_all=task.at_all,
+                    )
                 )
             else:
                 log_entry.stage = "template"
                 message = render_template(task.message_template, result)
                 log_entry.stage = "send"
-                send_message(task.bot, task.msg_type, message, at_all=task.at_all)
+                await asyncio.to_thread(
+                    functools.partial(
+                        send_message_by_bot_id,
+                        task.bot_id,
+                        task.msg_type,
+                        message,
+                        at_all=task.at_all,
+                    )
+                )
 
             message_sent = True
             task.last_run_result = "成功"

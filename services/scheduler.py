@@ -1,7 +1,9 @@
 """APScheduler-based cron scheduler for tasks."""
 
 import asyncio
+import functools
 import logging
+import threading
 from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -22,6 +24,9 @@ scheduler = AsyncIOScheduler(
 
 _JOB_PREFIX = "task_"
 
+# API / 启动时 sync_jobs 与调度器并发改作业定义时，串行化更安全。
+_sync_jobs_lock = threading.Lock()
+
 
 def _job_id(task_id: int) -> str:
     return f"{_JOB_PREFIX}{task_id}"
@@ -29,8 +34,12 @@ def _job_id(task_id: int) -> str:
 
 async def _execute_task(task_id: int) -> None:
     """Run a single task inside the scheduler (no request context)."""
-    from services.executor import run_script, render_template, render_html_template
-    from services.dingtalk import send_message
+    from services.executor import (
+        render_template,
+        render_html_template,
+        run_script_isolated,
+    )
+    from services.dingtalk import send_message_by_bot_id
     from services.html_renderer import render_html_to_image
     from services.image_host import upload_image
     from routers.task_logs import log_execution
@@ -43,13 +52,19 @@ async def _execute_task(task_id: int) -> None:
 
         log.info("Scheduler executing task %s [%s]", task.id, task.name)
 
+        script_content = task.script.content
+        mongo_config_id = task.script.mongo_config_id
+        script_format = task.script.script_format
+        bot_id = task.bot_id
+
         with log_execution(task.id, "scheduled", db) as log_entry:
             try:
                 log_entry.stage = "script"
-                result, _ = run_script(
-                    task.script.content,
-                    task.script.mongo_config,
-                    task.script.script_format,
+                result, _ = await asyncio.to_thread(
+                    run_script_isolated,
+                    script_content,
+                    mongo_config_id,
+                    script_format,
                 )
 
                 if task.msg_type == "image":
@@ -58,20 +73,33 @@ async def _execute_task(task_id: int) -> None:
                     log_entry.stage = "image_render"
                     img_bytes, _, _ = await render_html_to_image(html)
                     log_entry.stage = "upload"
-                    img_url = upload_image(img_bytes, task.id)
+                    img_url = await asyncio.to_thread(
+                        upload_image, img_bytes, task.id
+                    )
                     log_entry.stage = "send"
-                    send_message(
-                        task.bot,
-                        "image",
-                        img_url,
-                        image_intro_text=task.image_message_text,
-                        at_all=task.at_all,
+                    await asyncio.to_thread(
+                        functools.partial(
+                            send_message_by_bot_id,
+                            bot_id,
+                            "image",
+                            img_url,
+                            image_intro_text=task.image_message_text,
+                            at_all=task.at_all,
+                        )
                     )
                 else:
                     log_entry.stage = "template"
                     message = render_template(task.message_template, result)
                     log_entry.stage = "send"
-                    send_message(task.bot, task.msg_type, message, at_all=task.at_all)
+                    await asyncio.to_thread(
+                        functools.partial(
+                            send_message_by_bot_id,
+                            bot_id,
+                            task.msg_type,
+                            message,
+                            at_all=task.at_all,
+                        )
+                    )
 
                 task.last_run_result = "成功（定时）"
                 log_entry.success = True
@@ -91,55 +119,58 @@ async def _execute_task(task_id: int) -> None:
 
 def sync_jobs() -> None:
     """Read all tasks from DB and sync scheduler jobs accordingly."""
-    db = SessionLocal()
-    try:
-        tasks = db.query(Task).all()
-        existing_ids = {
-            job.id for job in scheduler.get_jobs() if job.id.startswith(_JOB_PREFIX)
-        }
-        wanted_ids: set[str] = set()
+    with _sync_jobs_lock:
+        db = SessionLocal()
+        try:
+            tasks = db.query(Task).all()
+            existing_ids = {
+                job.id
+                for job in scheduler.get_jobs()
+                if job.id.startswith(_JOB_PREFIX)
+            }
+            wanted_ids: set[str] = set()
 
-        for task in tasks:
-            jid = _job_id(task.id)
-            wanted_ids.add(jid)
+            for task in tasks:
+                jid = _job_id(task.id)
+                wanted_ids.add(jid)
 
-            if not task.enabled or not task.cron_expression:
+                if not task.enabled or not task.cron_expression:
+                    if jid in existing_ids:
+                        scheduler.remove_job(jid)
+                    continue
+
+                try:
+                    trigger = CronTrigger.from_crontab(
+                        task.cron_expression, timezone="Asia/Shanghai"
+                    )
+                except ValueError:
+                    log.warning(
+                        "Task %s has invalid cron '%s', skipping",
+                        task.id,
+                        task.cron_expression,
+                    )
+                    if jid in existing_ids:
+                        scheduler.remove_job(jid)
+                    continue
+
                 if jid in existing_ids:
-                    scheduler.remove_job(jid)
-                continue
+                    scheduler.reschedule_job(jid, trigger=trigger)
+                else:
+                    scheduler.add_job(
+                        _execute_task,
+                        trigger=trigger,
+                        args=[task.id],
+                        id=jid,
+                        name=task.name,
+                        replace_existing=True,
+                    )
 
-            try:
-                trigger = CronTrigger.from_crontab(
-                    task.cron_expression, timezone="Asia/Shanghai"
-                )
-            except ValueError:
-                log.warning(
-                    "Task %s has invalid cron '%s', skipping",
-                    task.id,
-                    task.cron_expression,
-                )
-                if jid in existing_ids:
-                    scheduler.remove_job(jid)
-                continue
+            for jid in existing_ids - wanted_ids:
+                scheduler.remove_job(jid)
 
-            if jid in existing_ids:
-                scheduler.reschedule_job(jid, trigger=trigger)
-            else:
-                scheduler.add_job(
-                    _execute_task,
-                    trigger=trigger,
-                    args=[task.id],
-                    id=jid,
-                    name=task.name,
-                    replace_existing=True,
-                )
-
-        for jid in existing_ids - wanted_ids:
-            scheduler.remove_job(jid)
-
-        log.info("Scheduler synced: %d active jobs", len(scheduler.get_jobs()))
-    finally:
-        db.close()
+            log.info("Scheduler synced: %d active jobs", len(scheduler.get_jobs()))
+        finally:
+            db.close()
 
 
 def get_job_status() -> list[dict]:
@@ -165,6 +196,7 @@ def start() -> None:
     log.info("Scheduler started")
 
 
-def shutdown() -> None:
-    scheduler.shutdown(wait=False)
+def shutdown(wait: bool = True) -> None:
+    """wait=True：重启/退出时尽量等当前定时任务跑完，避免半截提交。"""
+    scheduler.shutdown(wait=wait)
     log.info("Scheduler stopped")
