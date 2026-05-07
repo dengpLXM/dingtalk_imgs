@@ -7,7 +7,6 @@ body {
     background: linear-gradient(160deg, #0b1a3b 0%, #102050 40%, #0b1a3b 100%);
     color: #fff;
     font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-    min-height: 100vh;
     box-sizing: border-box;
 }
 .report-container {
