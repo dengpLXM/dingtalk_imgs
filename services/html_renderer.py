@@ -270,6 +270,40 @@ async def _get_browser():
     return _browser
 
 
+_SCREENSHOT_HEIGHT_JS = """
+() => {
+  const html = document.documentElement;
+  const body = document.body;
+  if (!body) return { scrollH: 1200, tightBottom: 1200 };
+  const scrollH = Math.max(
+    html.scrollHeight,
+    body.scrollHeight,
+    body.offsetHeight,
+    html.clientHeight
+  );
+  let bottom = 0;
+  for (const el of body.querySelectorAll("*")) {
+    let cs;
+    try {
+      cs = getComputedStyle(el);
+    } catch (e) {
+      continue;
+    }
+    if (cs.display === "none" || cs.visibility === "hidden") continue;
+    const op = parseFloat(cs.opacity);
+    if (op === 0) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 0.5 || r.height < 0.5) continue;
+    const b = r.bottom + window.pageYOffset;
+    if (b > bottom) bottom = b;
+  }
+  const rectBottom = body.getBoundingClientRect().bottom + window.pageYOffset;
+  const tightBottom = Math.max(Math.ceil(bottom), Math.ceil(rectBottom));
+  return { scrollH, tightBottom };
+}
+"""
+
+
 async def render_html_to_image(html_content: str, width: int = 900) -> tuple[bytes, str, str]:
     """Render HTML to JPEG image. Returns (jpeg_bytes, base64_str, md5_hex)."""
     async with _render_lock:
@@ -304,7 +338,42 @@ async def render_html_to_image(html_content: str, width: int = 900) -> tuple[byt
             except Exception:
                 pass
             await asyncio.sleep(0.05)
-            png_bytes = await page.screenshot(full_page=True, type="jpeg", quality=92)
+            full_page = os.getenv(
+                "PLAYWRIGHT_SCREENSHOT_FULL_PAGE", ""
+            ).strip().lower() in ("1", "true", "yes")
+            quality = int(os.getenv("PLAYWRIGHT_JPEG_QUALITY", "92"))
+            if quality < 1:
+                quality = 92
+            if full_page:
+                png_bytes = await page.screenshot(
+                    full_page=True, type="jpeg", quality=quality
+                )
+            else:
+                dims = await page.evaluate(_SCREENSHOT_HEIGHT_JS)
+                sh = max(int(dims.get("scrollH", 1)), 1)
+                tb = int(dims.get("tightBottom", sh))
+                margin = int(os.getenv("PLAYWRIGHT_CROP_MARGIN_PX", "8"))
+                tight = os.getenv("PLAYWRIGHT_TIGHT_CROP", "1").strip().lower() not in (
+                    "0",
+                    "false",
+                    "no",
+                )
+                if tb <= 0:
+                    h = sh
+                elif tight:
+                    h = min(sh, tb + margin)
+                    if h < sh * 0.35:
+                        h = sh
+                else:
+                    h = sh
+                max_h = int(os.getenv("PLAYWRIGHT_MAX_IMAGE_HEIGHT", "0") or "0")
+                if max_h > 0:
+                    h = min(h, max_h)
+                h = max(h, 1)
+                await page.set_viewport_size({"width": width, "height": h})
+                png_bytes = await page.screenshot(
+                    full_page=False, type="jpeg", quality=quality
+                )
         finally:
             await page.close()
 

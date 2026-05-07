@@ -1,6 +1,11 @@
 """Default HTML report template with blue-theme table style."""
 
 DEFAULT_STYLES = """
+html {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(160deg, #0b1a3b 0%, #102050 40%, #0b1a3b 100%);
+}
 body {
     margin: 0;
     padding: 30px 40px;
