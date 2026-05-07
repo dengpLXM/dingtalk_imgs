@@ -174,6 +174,18 @@ async def _close_browser_unlocked() -> None:
         _playwright = None
 
 
+def _launch_arg_merges(exe_kind: str, exe_path: str | None) -> list[str]:
+    """Extra Chromium flags. headless_shell on darwin often crashes (SIGSEGV); GPU off can help."""
+    merged: list[str] = []
+    if sys.platform == "darwin" and (
+        exe_kind == "headless-shell"
+        or (exe_path and "headless_shell" in exe_path.replace("\\", "/"))
+        or (exe_path and "headless-shell" in exe_path.replace("\\", "/"))
+    ):
+        merged.extend(["--disable-gpu", "--disable-software-rasterizer"])
+    return merged
+
+
 async def _get_browser():
     """Singleton browser; keeps Playwright alive (dropping the driver closes the browser)."""
     global _browser, _playwright
@@ -189,27 +201,72 @@ async def _get_browser():
 
         _playwright = await async_playwright().start()
         explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "").strip()
+        full = (
+            find_full_chromium_executable()
+            if not (explicit and os.path.isfile(explicit))
+            else None
+        )
+        shell = find_installed_headless_shell_executable()
+
+        linux_shm = ["--disable-dev-shm-usage"] if sys.platform.startswith("linux") else []
+
+        strategies: list[tuple[str, dict]] = []
         if explicit and os.path.isfile(explicit):
-            exe, exe_kind = explicit, "explicit"
-        else:
-            full = find_full_chromium_executable()
-            if full:
-                exe, exe_kind = full, "full"
-            else:
-                shell = find_installed_headless_shell_executable()
-                exe, exe_kind = (shell, "headless-shell") if shell else (None, "none")
-        opts: dict = {"headless": True}
-        if exe:
-            opts["executable_path"] = exe
-            _log.info("Playwright Chromium [%s]: %s", exe_kind, exe)
-        else:
-            _log.warning(
-                "No Chromium executable found under PLAYWRIGHT cache; launch may fail. "
-                "Run: playwright install chromium (without --only-shell)."
+            extra = _launch_arg_merges("explicit", explicit) + linux_shm
+            strategies.append(
+                (
+                    "explicit",
+                    {"headless": True, "executable_path": explicit, **({"args": extra} if extra else {})},
+                )
             )
-        if sys.platform.startswith("linux"):
-            opts["args"] = ["--disable-dev-shm-usage"]
-        _browser = await _playwright.chromium.launch(**opts)
+        if full:
+            extra = _launch_arg_merges("full", full) + linux_shm
+            strategies.append(
+                ("full", {"headless": True, "executable_path": full, **({"args": extra} if extra else {})})
+            )
+        # headless_shell SIGSEGV on some macOS ARM builds; prefer full Chromium install or system Chrome first.
+        if sys.platform == "darwin" and os.environ.get(
+            "PLAYWRIGHT_SKIP_CHANNEL_CHROME", ""
+        ).strip().lower() not in ("1", "true", "yes"):
+            strategies.append(
+                ("channel-chrome", {"headless": True, "channel": "chrome", **({"args": linux_shm} if linux_shm else {})}),
+            )
+        if shell:
+            extra = _launch_arg_merges("headless-shell", shell) + linux_shm
+            strategies.append(
+                (
+                    "headless-shell",
+                    {"headless": True, "executable_path": shell, **({"args": extra} if extra else {})},
+                )
+            )
+        strategies.append(
+            (
+                "bundled-default",
+                {"headless": True, **({"args": linux_shm} if linux_shm else {})},
+            )
+        )
+
+        last_err: Exception | None = None
+        for exe_kind, opts in strategies:
+            try:
+                if exe_kind == "channel-chrome":
+                    _log.info("Playwright Chromium [%s]", exe_kind)
+                elif opts.get("executable_path"):
+                    _log.info("Playwright Chromium [%s]: %s", exe_kind, opts["executable_path"])
+                elif exe_kind == "bundled-default":
+                    _log.warning(
+                        "Playwright Chromium [bundled-default]: no cached executable; "
+                        "install with: playwright install chromium (avoid --only-shell on macOS)."
+                    )
+                _browser = await _playwright.chromium.launch(**opts)
+                break
+            except Exception as e:
+                last_err = e
+                _log.warning("Playwright launch failed [%s]: %s", exe_kind, e)
+        else:
+            if last_err:
+                raise last_err
+            raise RuntimeError("Playwright chromium.launch: no strategy succeeded")
     return _browser
 
 
