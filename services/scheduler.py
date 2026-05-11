@@ -37,6 +37,7 @@ async def _execute_task(task_id: int) -> None:
     from services.executor import (
         render_template,
         render_html_template,
+        render_no_data_html,
         run_script_isolated,
         is_result_empty,
     )
@@ -68,15 +69,24 @@ async def _execute_task(task_id: int) -> None:
                     script_format,
                 )
 
-                if is_result_empty(result):
+                if is_result_empty(result) and task.msg_type == "image":
+                    log_entry.stage = "template"
+                    html = render_no_data_html()
+                    log_entry.stage = "image_render"
+                    img_bytes, _, _ = await render_html_to_image(html)
+                    log_entry.stage = "upload"
+                    img_url = await asyncio.to_thread(
+                        upload_image, img_bytes, task.id
+                    )
                     log_entry.stage = "send"
                     await asyncio.to_thread(
                         functools.partial(
                             send_message_by_bot_id,
                             bot_id,
-                            "text",
-                            "暂无数据",
-                            at_all=False,
+                            "image",
+                            img_url,
+                            image_intro_text=task.image_message_text,
+                            at_all=task.at_all,
                         )
                     )
                 elif task.msg_type == "image":

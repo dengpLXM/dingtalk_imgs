@@ -206,3 +206,16 @@ def render_html_template(template: str, result: object) -> str:
     if "<html" in rendered.lower() or "<body" in rendered.lower():
         return rendered
     return wrap_html(rendered)
+
+
+_NO_DATA_HTML = """
+<div class="report-container" style="display:flex;align-items:center;justify-content:center;min-height:200px;">
+  <p style="font-size:28px;color:#d4a017;font-weight:700;text-align:center;">暂无数据</p>
+</div>
+"""
+
+
+def render_no_data_html() -> str:
+    """Render a styled 'no data' placeholder image HTML."""
+    from services.html_template import wrap_html
+    return wrap_html(_NO_DATA_HTML)
