@@ -275,12 +275,17 @@ _SCREENSHOT_HEIGHT_JS = """
   const html = document.documentElement;
   const body = document.body;
   if (!body) return { scrollH: 1200, tightBottom: 1200 };
-  const scrollH = Math.max(
+  const viewportH = html.clientHeight;
+  const rawScrollH = Math.max(
     html.scrollHeight,
     body.scrollHeight,
-    body.offsetHeight,
-    html.clientHeight
+    body.offsetHeight
   );
+  // Use content-based scroll height: exclude viewport inflation when content
+  // is shorter than the viewport (scrollHeight == clientHeight means no overflow).
+  const scrollH = html.scrollHeight > viewportH
+    ? rawScrollH
+    : Math.max(body.scrollHeight, body.offsetHeight, 1);
   let bottom = 0;
   for (const el of body.querySelectorAll("*")) {
     let cs;

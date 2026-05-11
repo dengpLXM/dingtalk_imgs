@@ -174,6 +174,15 @@ def run_script_isolated(
         db.close()
 
 
+def is_result_empty(result: object) -> bool:
+    """Check if script result contains no meaningful data."""
+    if result is None:
+        return True
+    if isinstance(result, (list, dict)) and len(result) == 0:
+        return True
+    return False
+
+
 def format_result(result: object) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2, cls=_JSONEncoder)
 

@@ -15,6 +15,7 @@ from services.executor import (
     render_template,
     render_html_template,
     format_result,
+    is_result_empty,
 )
 from services.dingtalk import send_message_by_bot_id
 from services.html_renderer import render_html_to_image
@@ -134,7 +135,18 @@ async def execute_task(task_id: int, db: Session = Depends(get_db)):
                 task.script.script_format,
             )
 
-            if task.msg_type == "image":
+            if is_result_empty(result):
+                log_entry.stage = "send"
+                await asyncio.to_thread(
+                    functools.partial(
+                        send_message_by_bot_id,
+                        task.bot_id,
+                        "text",
+                        "暂无数据",
+                        at_all=False,
+                    )
+                )
+            elif task.msg_type == "image":
                 log_entry.stage = "template"
                 html = render_html_template(task.message_template, result)
                 log_entry.stage = "image_render"
